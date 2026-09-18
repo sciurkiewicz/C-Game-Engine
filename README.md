@@ -1,61 +1,50 @@
-# Wildwood — prototyp Raylib / C#
+﻿# Wildwood — edytor i gra testowa
 
-Mała scena 2.5D inspirowana klimatem survivalowych gier: proceduralne,
-autorskie billboardy postaci, drzew, skał, traw i krzaków w świecie 3D.
-To prototyp eksploracji, bez pełnego systemu przetrwania.
+Projekt ma dwa katalogi aplikacji:
+
+- `Editor/` — edytor map 2.5D z biblioteką dostarczonych grafik.
+- `Runtime/` — gra testowa uruchamiająca zapisaną mapę; wspólny format mapy i renderer znajdują się w `Runtime/World/`.
 
 ## Uruchomienie
 
-Wymagany .NET SDK 10. W katalogu projektu:
+Wymagany .NET SDK 10. Z głównego katalogu repozytorium:
 
 ```sh
-dotnet run
+dotnet run --project Editor
 ```
 
-Pierwsze uruchomienie pobiera Raylib-cs z NuGet. Grafiki są rysowane
-w kodzie; nie trzeba pobierać dodatkowych assetów.
+Wybierz grafikę po lewej i kliknij mapę, aby wstawić obiekt. Narzędzie **Select** pozwala zaznaczać i przeciągać obiekty, **Ground** maluje podłoże, a **Player** ustawia postać. Panel po prawej zawiera właściwości.
 
-## Sterowanie
+**Save / Ctrl+S** zapisuje mapę do `Runtime/Maps/world.json`. **Play / F5** uruchamia jej bieżącą wersję wewnątrz edytora. F5 lub Escape wraca do edycji.
 
-- WASD lub strzałki — chodzenie
-- Lewy Shift — bieganie
-- Kółko myszy / przewijanie na gładziku lub + / - — płynny zoom
-- R — domyślny zoom i obrót kamery
-- Q / E — obrót kamery o 45 stopni
-- Spacja — zbieranie jagód z pobliskiego krzaka
-- Escape — wyjście
-
-Kamera perspektywiczna patrzy pod kątem i podąża za postacią.
-Billboardy obracają się ku kamerze, a ruch WASD jest liczony względem widoku. Drzewa i skały mają prostą kolizję.
-Mapa jest generowana z ustalonym ziarnem, więc wygląda tak samo przy każdym starcie.
-
-## Sprawdzenie renderowania
+Osobna gra odczytuje ostatnio zapisaną mapę:
 
 ```sh
-dotnet run -- --smoke-test
+dotnet run --project Runtime
 ```
 
-Otwiera okno na 15 klatek, zapisuje `wildwood-smoke.png` i kończy program.
-Wymaga działającej sesji graficznej. Nie sprawdza ręcznego sterowania.
+Przed pierwszym zapisem obie aplikacje wyświetlają przykładową scenę z dostarczonymi obiektami. **New** tworzy pustą mapę. Edytor pyta o niezapisane zmiany przed utworzeniem nowej mapy, wczytaniem lub zamknięciem.
 
-Dodatkowe warianty podglądu: `--smoke-test --rotated`, `--smoke-test --close` i `--smoke-test --far`.
-
-## Kamera
-
-Kamera używa parametrów powierzchni z klasycznego Don't Starve:
-FOV 35°, domyślny obrót 45°, odległość 30 (zakres 15–50), krok zoomu 4.
-Nachylenie płynnie rośnie od 30° przy zbliżeniu do 60° przy oddaleniu.
-Podążanie, obrót i odległość mają osobne tempo wygładzania: 4, 20 i 1.
-Zoom jest skierowany na postać, a Q/E obraca widok o 45° najkrótszą drogą.
-Ruch używa docelowego kierunku kamery, więc podczas obrotu nie zakreśla łuku.
-To zachowanie zwykłej kamery; nie obejmuje jaskiń ani efektów specjalnych gry.
-
-Parametry odniesienia: [followcamera.lua](https://github.com/taichunmin/dont-starve-game-scripts/blob/master/cameras/followcamera.lua).
-Implementacja: `FollowCamera.cs`.
-
-Sprawdzenie podążania, ograniczeń zoomu, nachylenia i pełnego obrotu przy
-30, 60 i 144 FPS (bez otwierania okna):
+Można pracować na innym pliku:
 
 ```sh
-dotnet run -- --camera-test
+dotnet run --project Editor -- --map Runtime/Maps/test.json
+dotnet run --project Runtime -- --map Runtime/Maps/test.json
 ```
+
+## Materiały
+
+Dostarczone 38 grafik jest w `Editor/objects/`. Postać jest tymczasowo niebieskim znacznikiem, a podłoże korzysta z pięciu prostych tekstur generowanych w kodzie. Własne grafiki postaci umieść w `Editor/characters/`, a tekstury podłoża w `Editor/terrain/` — aplikacje wczytują PNG przy starcie.
+
+Szczegóły: [obsługa edytora](Editor/README.md), [gra testowa i kamera](Runtime/README.md).
+
+## Sprawdzenie
+
+```sh
+dotnet build
+dotnet run --project Editor -- --editor-test
+dotnet run --project Runtime -- --camera-test
+dotnet run --project Editor -- --interaction-test
+```
+
+Ostatni test otwiera okno i symuluje działania myszy oraz klawiatury przez mechanizm automatyzacji Raylib. Używa osobnej mapy w `Editor/obj/interaction-test.json`; nie zmienia map użytkownika. Sprawdza wstawianie, zaznaczanie, przeciąganie, właściwości, cofanie, malowanie, postać, podgląd gry, zapis/wczytanie i zmianę rozmiaru okna.
