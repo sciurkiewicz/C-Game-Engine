@@ -4,6 +4,24 @@ static class EditorChecks
 {
     public static void Run()
     {
+        DialogueChecks.Run();
+        TerrainChecks.Run();
+        MapSizeChecks.Run();
+        var sizes = new MapDocument(new MapData(), true);
+        sizes.New(20, 12);
+        Check(sizes.Map.Width == 20 && sizes.Map.Depth == 12 && sizes.Map.Tiles.Length == 240 && sizes.Map.Tiles.All(t => t == "grass"), "rectangular new map");
+        sizes.Paint(new(9.9f, 0, 5.9f), 1, "sand");
+        Check(sizes.Map.Tiles.Count(t => t == "sand") == 4, "painting respects rectangular map bounds");
+        sizes.Undo();
+        Check(sizes.Map.Width == 48 && sizes.Map.Depth == 48, "undo restores previous map size");
+        sizes.Redo();
+        Check(sizes.Map.Width == 20 && sizes.Map.Depth == 12, "redo restores selected map size");
+        string sizedState = sizes.Map.Serialize();
+        try { sizes.New(0, MapData.MaxSize + 1); throw new Exception("Invalid new map size accepted"); }
+        catch (ArgumentOutOfRangeException) { }
+        Check(sizes.Map.Serialize() == sizedState, "invalid size preserves current work");
+        foreach (int size in new[] { MapData.MinSize, MapData.MaxSize })
+        { var edge = MapData.CreateEmpty(size, size); edge.Validate(); Check(edge.Tiles.Length == size * size, "dimension limits"); }
         const string asset = "objects/vegetation/trees/tree1.png";
         var doc = new MapDocument(new MapData(), true);
         Check(!doc.Dirty, "initial clean state");
@@ -52,7 +70,7 @@ static class EditorChecks
             Check(!doc.CanRedo, "editing after undo clears redo history");
         }
         finally { if (File.Exists(file)) File.Delete(file); if (File.Exists(file + ".tmp")) File.Delete(file + ".tmp"); }
-        Console.WriteLine("Editor checks passed: placement, collision, painting, spawn, undo/redo, save/load and invalid-map recovery.");
+        Console.WriteLine("Editor checks passed: map sizes, placement, collision, painting, spawn, undo/redo, save/load and invalid-map recovery.");
     }
     static void Check(bool condition, string message)
     {

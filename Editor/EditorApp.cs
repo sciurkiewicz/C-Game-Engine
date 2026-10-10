@@ -2,7 +2,7 @@ using System.Numerics;
 using Raylib_cs;
 using static Raylib_cs.Raylib;
 
-enum EditTool { Select, Place, Ground, Player }
+enum EditTool { Select, Place, Ground, Player, NPC, Sculpt, Water }
 
 sealed partial class EditorApp : IDisposable
 {
@@ -12,15 +12,20 @@ sealed partial class EditorApp : IDisposable
     readonly MapDocument document;
     readonly string mapPath;
     readonly FollowCamera camera = new(Vector3.Zero);
+    readonly DialogueOverlay dialogueUi = new();
     RenderTexture2D canvas;
     Vector3 focus;
     EditTool tool = EditTool.Select;
     string? selectedId;
     string chosenAsset = "", chosenTerrain = "grass";
     string? chosenCharacter;
+    string? chosenNpcCharacter;
     float placeHeight = 2;
     bool placeSolid = true, snap = true, grid = true, exit, closeRequested;
     int category = 1, scroll, brushRadius, groundScroll, characterScroll;
+    SculptMode sculptMode;
+    float sculptRadius = 3, sculptStrength = 3, flattenHeight;
+    bool eraseWater;
     bool gesture, dragging, dragArmed;
     Vector3 dragOffset, dragOrigin;
     Vector3 lastPaint;
@@ -32,7 +37,8 @@ sealed partial class EditorApp : IDisposable
     static readonly Color Background = new(17, 23, 31, 255), Panel = new(24, 32, 43, 255),
         Card = new(33, 44, 57, 255), Border = new(49, 64, 79, 255), Text = new(222, 233, 239, 255),
         Muted = new(140, 160, 176, 255), Accent = new(104, 217, 175, 255);
-    SceneObject? Selection => document.Map.Objects.FirstOrDefault(o => o.Id == selectedId);
+    SceneObject? Selection => document.Map.Objects.Concat<SceneObject>(document.Map.Npcs).FirstOrDefault(o => o.Id == selectedId);
+    bool ModalOpen => pendingAction != null || creatingMap || dialogueNpcId != null || textEdit != null;
 
     public EditorApp(string mapPath)
     {
@@ -55,9 +61,10 @@ sealed partial class EditorApp : IDisposable
         if (first != null) Choose(first);
         tool = EditTool.Select;
         chosenCharacter = map.Player.Asset;
-        focus = map.Player.Position;
+        focus = map.GroundPosition(map.Player.X, map.Player.Z);
         camera.Snap(focus);
         int missing = map.Objects.Count(o => !assets.Sprites.ContainsKey(o.Asset)) + map.Tiles.Distinct().Count(t => !assets.Terrain.ContainsKey(t)) +
+            map.Npcs.Count(n => n.Asset != "" && !assets.Sprites.ContainsKey(n.Asset)) +
             (map.Player.Asset != null && !assets.Sprites.ContainsKey(map.Player.Asset) ? 1 : 0);
         if (missing > 0) status = $"Missing assets: {missing}. Placeholders are shown; original references are preserved.";
         if (assets.Warnings.Count > 0) status = $"Could not load {assets.Warnings.Count} images. Other assets are available.";
@@ -90,6 +97,7 @@ sealed partial class EditorApp : IDisposable
     }
     bool InViewport => CheckCollisionPointRec(GetMousePosition(), viewport);
     Ray MouseRay => GetScreenToWorldRayEx(GetMousePosition() - new Vector2(viewport.X, viewport.Y), camera.View, (int)viewport.Width, (int)viewport.Height);
+    Vector3? MouseTerrainPoint => TerrainGeometry.Raycast(document.Map, MouseRay);
     Vector3 Snap(Vector3 p)
     {
         if (snap) { p.X = MathF.Round(p.X * 2) / 2; p.Z = MathF.Round(p.Z * 2) / 2; }
@@ -97,10 +105,13 @@ sealed partial class EditorApp : IDisposable
     }
     void Update(float dt)
     {
+        if (textEdit != null) { UpdateTextEdit(); return; }
+        if (creatingMap) { UpdateNewMap(); return; }
+        if (dialogueNpcId != null) { UpdateDialogueEditor(); return; }
         if (IsKeyPressed(KeyboardKey.F5)) TogglePlay();
         if (play != null)
         {
-            if (IsKeyPressed(KeyboardKey.Escape)) { play = null; return; }
+            if (IsKeyPressed(KeyboardKey.Escape) && !play.Dialogue.Active) { play = null; return; }
             play.Update(dt, InViewport ? GetMouseWheelMove() : 0);
             return;
         }
@@ -108,6 +119,7 @@ sealed partial class EditorApp : IDisposable
         if (ctrl && IsKeyPressed(KeyboardKey.S)) Save();
         if (ctrl && IsKeyPressed(KeyboardKey.O)) Request("load");
         if (ctrl && IsKeyPressed(KeyboardKey.N)) Request("new");
+        if (ModalOpen) return;
         if (ctrl && IsKeyPressed(KeyboardKey.Z)) Undo();
         if (ctrl && IsKeyPressed(KeyboardKey.Y)) Redo();
         if (ctrl && IsKeyPressed(KeyboardKey.D)) Duplicate();
@@ -116,8 +128,11 @@ sealed partial class EditorApp : IDisposable
         if (IsKeyPressed(KeyboardKey.Two)) tool = EditTool.Place;
         if (IsKeyPressed(KeyboardKey.Three)) tool = EditTool.Ground;
         if (IsKeyPressed(KeyboardKey.Four)) tool = EditTool.Player;
+        if (IsKeyPressed(KeyboardKey.Five)) tool = EditTool.NPC;
+        if (IsKeyPressed(KeyboardKey.Six)) tool = EditTool.Sculpt;
+        if (IsKeyPressed(KeyboardKey.Seven)) tool = EditTool.Water;
         if (IsKeyPressed(KeyboardKey.G)) grid = !grid;
-        if (IsKeyPressed(KeyboardKey.F)) { focus = Selection?.Position ?? document.Map.Player.Position; camera.Snap(focus); }
+        if (IsKeyPressed(KeyboardKey.F)) { focus = Selection is { } item ? document.Map.GroundPosition(item) : document.Map.GroundPosition(document.Map.Player.X, document.Map.Player.Z); camera.Snap(focus); }
         if (IsKeyPressed(KeyboardKey.Escape)) { tool = EditTool.Select; selectedId = null; }
         if (!ctrl)
         {
@@ -136,9 +151,13 @@ sealed partial class EditorApp : IDisposable
         }
         focus = document.Map.Clamp(focus);
         camera.Update(focus, dt);
-        if (!IsMouseButtonDown(MouseButton.Left)) { gesture = false; dragging = false; dragArmed = false; }
+        if (!IsMouseButtonDown(MouseButton.Left))
+        {
+            if (gesture) document.EndSculptStroke();
+            gesture = false; dragging = false; dragArmed = false;
+        }
         if (!InViewport) return;
-        var ground = WorldRenderer.GroundPoint(MouseRay);
+        var ground = MouseTerrainPoint;
         if (IsMouseButtonPressed(MouseButton.Left) && tool == EditTool.Select)
         {
             var hit = renderer.Pick(document.Map, camera.View, MouseRay);
@@ -147,7 +166,7 @@ sealed partial class EditorApp : IDisposable
             if (hit != null && ground.HasValue)
             {
                 dragOrigin = ground.Value;
-                dragOffset = hit.Position - ground.Value;
+                dragOffset = document.Map.GroundPosition(hit) - ground.Value;
             }
         }
         if (!ground.HasValue || !document.Map.Contains(ground.Value.X, ground.Value.Z)) return;
@@ -171,13 +190,39 @@ sealed partial class EditorApp : IDisposable
             document.Map.Player.Asset = chosenCharacter;
             status = "Player start updated.";
         }
+        if (tool == EditTool.NPC && IsMouseButtonPressed(MouseButton.Left))
+        {
+            selectedId = document.PlaceNpc(chosenNpcCharacter, point).Id;
+            tool = EditTool.Select;
+            status = "NPC placed. Edit its name and dialogue in Properties.";
+        }
+        if (tool == EditTool.Water && IsMouseButtonPressed(MouseButton.Left))
+        {
+            status = document.FillWater(ground.Value, eraseWater) switch
+            {
+                WaterEditResult.Filled => "Basin filled to the selected water level.",
+                WaterEditResult.Drained => "Basin drained.",
+                WaterEditResult.Unchanged => "This basin is already filled.",
+                _ => eraseWater ? "Click inside a filled basin." : "Click below the water level. Dig a basin with Sculpt first."
+            };
+        }
         if (tool == EditTool.Ground && IsMouseButtonDown(MouseButton.Left) && (gesture || IsMouseButtonPressed(MouseButton.Left)))
         {
             if (!gesture) { document.Checkpoint(); gesture = true; lastPaint = ground.Value; }
             int steps = Math.Max(1, (int)MathF.Ceiling(Vector3.Distance(lastPaint, ground.Value) * 2));
             for (int step = 1; step <= steps; step++)
-                document.Paint(Vector3.Lerp(lastPaint, ground.Value, step / (float)steps), brushRadius, chosenTerrain);
+            {
+                var sample = Vector3.Lerp(lastPaint, ground.Value, step / (float)steps);
+                document.Paint(sample, brushRadius, chosenTerrain);
+            }
             lastPaint = ground.Value;
+        }
+        if (tool == EditTool.Sculpt && IsMouseButtonDown(MouseButton.Left) && (gesture || IsMouseButtonPressed(MouseButton.Left)))
+        {
+            if (!gesture) { document.Checkpoint(); gesture = true; }
+            bool reverse = IsKeyDown(KeyboardKey.LeftShift) || IsKeyDown(KeyboardKey.RightShift);
+            var mode = reverse && sculptMode == SculptMode.Raise ? SculptMode.Lower : reverse && sculptMode == SculptMode.Lower ? SculptMode.Raise : sculptMode;
+            document.Sculpt(ground.Value, sculptRadius, sculptStrength * dt, mode, flattenHeight);
         }
     }
     void Render()
@@ -186,25 +231,34 @@ sealed partial class EditorApp : IDisposable
         BeginTextureMode(canvas);
         ClearBackground(new Color(38, 47, 54, 255));
         BeginMode3D(view);
-        renderer.Draw(play?.Map ?? document.Map, view, grid, play?.Player);
+        renderer.Draw(play?.Map ?? document.Map, view, grid, play?.Player, (int)viewport.Width, (int)viewport.Height);
         if (play == null)
         {
             if (Selection is { } selected)
-                renderer.DrawOutline(view, selected, Accent);
-            DrawCubeWires(document.Map.Player.Position + new Vector3(0, .05f, 0), .8f, .1f, .8f, new Color(80, 183, 255, 255));
-            if (InViewport && pendingAction == null && WorldRenderer.GroundPoint(MouseRay) is { } ground && document.Map.Contains(ground.X, ground.Z))
+                renderer.DrawOutline(view, selected, Accent, document.Map);
+            DrawCubeWires(document.Map.GroundPosition(document.Map.Player.X, document.Map.Player.Z) + new Vector3(0, .05f, 0), .8f, .1f, .8f, new Color(80, 183, 255, 255));
+            if (InViewport && !ModalOpen && MouseTerrainPoint is { } ground && document.Map.Contains(ground.X, ground.Z))
             {
                 var point = Snap(ground);
                 if (tool == EditTool.Place && chosenAsset.Length > 0)
                     renderer.DrawSprite(view, chosenAsset, point, placeHeight, Accent, 130);
                 if (tool == EditTool.Player)
                     renderer.DrawSprite(view, chosenCharacter ?? "", point, document.Map.Player.Height, new Color(80, 183, 255, 130), 130);
+                if (tool == EditTool.NPC)
+                    renderer.DrawSprite(view, chosenNpcCharacter ?? "", point, 1.6f, new Color(244, 192, 96, 130), 130);
                 if (tool == EditTool.Ground)
                 {
                     float x = MathF.Floor(ground.X + document.Map.Width / 2f) - document.Map.Width / 2f + .5f;
                     float z = MathF.Floor(ground.Z + document.Map.Depth / 2f) - document.Map.Depth / 2f + .5f;
-                    DrawCubeWires(new(x, .04f, z), brushRadius * 2 + 1, .08f, brushRadius * 2 + 1, Accent);
+                    renderer.DrawBrush(document.Map, new(x, 0, z), brushRadius + .5f, Accent, true);
                 }
+                if (tool == EditTool.Water)
+                {
+                    var color = ground.Y < document.Map.WaterLevel ? new Color(80, 183, 255, 255) : new Color(255, 177, 100, 255);
+                    renderer.DrawBrush(document.Map, ground, .4f, color, false, document.Map.WaterLevel);
+                    DrawLine3D(ground, new(ground.X, Math.Max(ground.Y, document.Map.WaterLevel) + .06f, ground.Z), color);
+                }
+                if (tool == EditTool.Sculpt) renderer.DrawBrush(document.Map, ground, sculptRadius, Accent, false);
             }
         }
         EndMode3D();
@@ -216,10 +270,14 @@ sealed partial class EditorApp : IDisposable
         DrawPalette();
         DrawInspector();
         DrawRectangle(0, GetScreenHeight() - Bottom, GetScreenWidth(), Bottom, Panel);
-        Label(status, 16, GetScreenHeight() - 22, 13, Muted, GetScreenWidth() - 260);
-        Label($"{document.Map.Objects.Count} objects  |  {document.Map.Width} x {document.Map.Depth}", GetScreenWidth() - 235, GetScreenHeight() - 22, 13, Accent);
+        Label(status, 16, GetScreenHeight() - 22, 13, Muted, GetScreenWidth() - 342);
+        Label($"{document.Map.Objects.Count} objects / {document.Map.Npcs.Count} NPC  |  {document.Map.Width} x {document.Map.Depth}", GetScreenWidth() - 310, GetScreenHeight() - 22, 13, Accent);
         DrawRectangle(Left + 12, Top + 12, 154, 25, new Color(17, 23, 31, 220));
         Label(play != null ? "PLAYTEST  /  F5 to stop" : "PERSPECTIVE  /  2.5D", Left + 20, Top + 19, 12, play != null ? Accent : Text);
+        if (play != null && pendingAction == null) dialogueUi.Draw(play, viewport);
+        if (dialogueNpcId != null) DrawDialogueEditor();
+        if (creatingMap) DrawNewMap();
+        if (textEdit != null) DrawTextEdit();
         if (pendingAction != null) DrawConfirmation();
         EndDrawing();
     }
@@ -233,8 +291,8 @@ sealed partial class EditorApp : IDisposable
         int x = 16;
         foreach (var t in Enum.GetValues<EditTool>())
         {
-            if (Button($"{(int)t + 1}  {t}", x, 46, 96, tool == t, play == null)) tool = t;
-            x += 102;
+            if (Button($"{(int)t + 1}  {t}", x, 46, 80, tool == t, play == null)) tool = t;
+            x += 82;
         }
         if (Button("Undo", x + 8, 46, 65, false, play == null && document.CanUndo)) Undo();
         if (Button("Redo", x + 79, 46, 65, false, play == null && document.CanRedo)) Redo();
@@ -247,12 +305,37 @@ sealed partial class EditorApp : IDisposable
     void DrawPalette()
     {
         DrawRectangle(0, Top, Left, GetScreenHeight() - Top - Bottom, Panel);
-        Label(tool == EditTool.Ground ? "GROUND MATERIALS" : tool == EditTool.Player ? "PLAYER" : "ASSET LIBRARY", 16, 108, 15, Text);
-        if (tool == EditTool.Player)
+        Label(tool == EditTool.Ground ? "GROUND MATERIALS" : tool == EditTool.Player ? "PLAYER" : tool == EditTool.NPC ? "NPC" : tool == EditTool.Sculpt ? "TERRAFORM" : tool == EditTool.Water ? "3D WATER" : "ASSET LIBRARY", 16, 108, 15, Text);
+        if (tool == EditTool.Sculpt)
         {
-            if (Button("Blue placeholder", 16, 142, 218, chosenCharacter == null, play == null))
-                ChangeCharacter(null);
-            Label("Click the map to set the spawn.", 16, 187, 13, Muted);
+            int sy = 146;
+            foreach (var mode in Enum.GetValues<SculptMode>())
+            {
+                if (Button(mode.ToString(), 16, sy, 218, sculptMode == mode, play == null)) sculptMode = mode;
+                sy += 42;
+            }
+            Label("Hold LMB to sculpt the surface.", 16, 328, 13, Muted);
+            Label("Shift swaps Raise / Lower.", 16, 350, 13, Muted);
+            Label("Elevation step: 0.25 m.", 16, 382, 13, Accent);
+            return;
+        }
+        if (tool == EditTool.Water)
+        {
+            if (Button("Fill basin", 16, 146, 218, !eraseWater, play == null)) eraseWater = false;
+            if (Button("Drain basin", 16, 188, 218, eraseWater, play == null)) eraseWater = true;
+            Label("Click inside a terrain depression.", 16, 242, 13, Muted);
+            Label("Level is shared by this map.", 16, 264, 13, Muted);
+            Label("Shore follows the terrain.", 16, 296, 13, Accent);
+            Label("Dig the basin with Sculpt first.", 16, 328, 13, Muted);
+            return;
+        }
+        if (tool is EditTool.Player or EditTool.NPC)
+        {
+            bool npc = tool == EditTool.NPC;
+            string? character = npc ? chosenNpcCharacter : chosenCharacter;
+            if (Button(npc ? "Gold placeholder" : "Blue placeholder", 16, 142, 218, character == null, play == null))
+                ChangeActorCharacter(null, npc);
+            Label(npc ? "Click the map to place an NPC." : "Click the map to set the spawn.", 16, 187, 13, Muted);
             Label("Add PNG files to", 16, 212, 13, Muted);
             Label("Editor/characters", 16, 231, 13, Accent);
             var characters = assets.Sprites.Values.Where(s => s.Id.StartsWith("characters/")).ToArray();
@@ -261,8 +344,8 @@ sealed partial class EditorApp : IDisposable
             BeginScissorMode(0, 264, Left, GetScreenHeight() - Bottom - 264);
             foreach (var sprite in characters)
             {
-                if (Button(sprite.Name, 16, cy, 218, chosenCharacter == sprite.Id,
-                    play == null && GetMouseY() >= 264 && GetMouseY() < GetScreenHeight() - Bottom)) ChangeCharacter(sprite.Id);
+                if (Button(sprite.Name, 16, cy, 218, character == sprite.Id,
+                    play == null && GetMouseY() >= 264 && GetMouseY() < GetScreenHeight() - Bottom)) ChangeActorCharacter(sprite.Id, npc);
                 cy += 36;
             }
             EndScissorMode();
@@ -271,10 +354,11 @@ sealed partial class EditorApp : IDisposable
         if (tool == EditTool.Ground)
         {
             Label("Hold LMB to paint tiles", 16, 138, 13, Muted);
-            ScrollPalette(ref groundScroll, 164, (assets.Terrain.Count + 1) / 2 * 120);
+            var materials = assets.Terrain.Where(t => t.Key != "water").ToArray();
+            ScrollPalette(ref groundScroll, 164, (materials.Length + 1) / 2 * 120);
             BeginScissorMode(0, 164, Left, GetScreenHeight() - Bottom - 164);
             int index = 0;
-            foreach (var (id, texture) in assets.Terrain)
+            foreach (var (id, texture) in materials)
             {
                 int x = 16 + index % 2 * 116, y = 168 + index / 2 * 120 - groundScroll;
                 if (AssetCard(texture, Path.GetFileNameWithoutExtension(id), x, y, chosenTerrain == id,
@@ -290,7 +374,7 @@ sealed partial class EditorApp : IDisposable
         var items = assets.Sprites.Values.Where(s => s.Id.StartsWith("objects/") && (category == 0 || s.Category == categories[category]))
             .OrderBy(s => s.Id.Contains("/trees/") ? 0 : 1).ThenBy(s => s.Id).ToArray();
         int available = GetScreenHeight() - Bottom - 188;
-        if (GetMouseX() < Left && GetMouseY() > 174 && pendingAction == null)
+        if (GetMouseX() < Left && GetMouseY() > 174 && !ModalOpen)
             scroll = Math.Clamp(scroll - (int)(GetMouseWheelMove() * 45), 0, Math.Max(0, (items.Length + 1) / 2 * 120 - available));
         scroll = Math.Clamp(scroll, 0, Math.Max(0, (items.Length + 1) / 2 * 120 - available));
         BeginScissorMode(0, 176, Left, available);
@@ -314,7 +398,8 @@ sealed partial class EditorApp : IDisposable
             Label("WASD / arrows: move", x, 150, 14, Text);
             Label("Shift: run", x, 178, 14, Text);
             Label("Wheel: zoom", x, 206, 14, Text);
-            Label("F5 / Escape: back to editor", x, 250, 13, Accent);
+            Label("E: talk to nearby NPC", x, 234, 14, Text);
+            Label("F5 / Escape: back to editor", x, 266, 13, Accent);
             Label("Testing a copy of this map.", x, 291, 13, Muted);
             return;
         }
@@ -331,7 +416,28 @@ sealed partial class EditorApp : IDisposable
             Label("Player start", x, 147, 15, Accent);
             Label($"X  {document.Map.Player.X:0.0}     Z  {document.Map.Player.Z:0.0}", x, 180, 14, Text);
             Stepper("Height", document.Map.Player.Height, x, 216, v => { document.Checkpoint(); document.Map.Player.Height = Math.Clamp(v, .25f, 12); }, .25f);
-            if (!WorldRenderer.CanWalk(document.Map, document.Map.Player.Position)) Label("Spawn overlaps a solid object", x, 272, 12, new Color(255, 177, 100, 255));
+            if (!WorldRenderer.CanWalk(document.Map, document.Map.GroundPosition(document.Map.Player.X, document.Map.Player.Z))) Label("Spawn blocked: object / terrain / water", x, 272, 12, new Color(255, 177, 100, 255));
+        }
+        else if (tool == EditTool.Sculpt)
+        {
+            Label("Mode: " + sculptMode, x, 147, 16, Accent);
+            Stepper("Radius (metres)", sculptRadius, x, 184, v => sculptRadius = Math.Clamp(v, 1, 16), 1);
+            Stepper("Strength", sculptStrength, x, 244, v => sculptStrength = Math.Clamp(v, .25f, 12), .25f);
+            if (sculptMode == SculptMode.Flatten)
+                Stepper("Target elevation", flattenHeight, x, 304, v => flattenHeight = MapData.SnapElevation(Math.Clamp(v, MapData.MinElevation, MapData.MaxElevation)), .25f);
+            if (MouseTerrainPoint is { } ground) Label($"Elevation: {MapData.SnapElevation(ground.Y):0.00} m", x, 382, 14, Text);
+            Label("Step: 0.25 m / one stroke = undo.", x, 414, 13, Muted);
+        }
+        else if (tool == EditTool.Water)
+        {
+            Label(eraseWater ? "Drain basin" : "Fill basin", x, 147, 16, Accent);
+            Stepper("Water level", document.Map.WaterLevel, x, 184, document.SetWaterLevel, .25f);
+            if (MouseTerrainPoint is { } waterPoint)
+                Label($"Depth at cursor: {Math.Max(0, document.Map.WaterLevel - waterPoint.Y):0.00} m", x, 266, 14, Text);
+            if (Button(document.Map.WaveHeight > 0 ? "Waves: ON" : "Waves: OFF", x, 304, 218, document.Map.WaveHeight > 0))
+            { document.Checkpoint(); document.Map.WaveHeight = document.Map.WaveHeight > 0 ? 0 : .08f; }
+            Label("Fill / drain with one click.", x, 364, 13, Muted);
+            Label("Depth comes from the terrain.", x, 390, 13, Muted);
         }
         else if (tool == EditTool.Place)
         {
@@ -340,15 +446,29 @@ sealed partial class EditorApp : IDisposable
             if (Button(placeSolid ? "Collision: ON" : "Collision: OFF", x, 248, 218, placeSolid)) placeSolid = !placeSolid;
             Label("Click to place. Repeat freely.", x, 294, 13, Muted);
         }
+        else if (tool == EditTool.NPC)
+        {
+            Label("Place an NPC", x, 148, 16, Accent);
+            Label("Choose a character on the left.", x, 183, 13, Muted);
+            Label("Click the map, then edit dialogue.", x, 205, 13, Muted);
+            if (Selection is NpcData npc && Button("Edit selected NPC dialogue", x, 245, 218)) OpenDialogue(npc);
+        }
         else if (Selection is { } selected)
         {
-            Label(Path.GetFileNameWithoutExtension(selected.Asset), x, 148, 16, Accent, 220);
+            Label(selected is NpcData actor ? actor.Name : Path.GetFileNameWithoutExtension(selected.Asset), x, 148, 16, Accent, 220);
             Stepper("X", selected.X, x, 184, v => ChangePosition(selected, v, selected.Z), .5f);
             Stepper("Z", selected.Z, x, 234, v => ChangePosition(selected, selected.X, v), .5f);
             Stepper("Height", selected.Height, x, 284, v => { document.Checkpoint(); selected.Height = Math.Clamp(v, .25f, 12); }, .25f);
             if (Button(selected.Solid ? "Collision: ON" : "Collision: OFF", x, 340, 218, selected.Solid)) { document.Checkpoint(); selected.Solid = !selected.Solid; }
             if (Button("Duplicate", x, 385, 105)) Duplicate();
             if (Button("Delete", x + 113, 385, 105)) Delete();
+            if (selected is NpcData npc)
+            {
+                if (Button("Name", x, 423, 66)) BeginTextEdit("NPC name", npc.Name, 80, false, value =>
+                { if (string.IsNullOrWhiteSpace(value)) return; document.Checkpoint(); npc.Name = value.Trim(); });
+                if (Button("Sprite", x + 74, 423, 66)) { chosenNpcCharacter = npc.Asset == "" ? null : npc.Asset; tool = EditTool.NPC; }
+                if (Button("Dialogue", x + 148, 423, 70, true)) OpenDialogue(npc);
+            }
         }
         else
         {
@@ -374,13 +494,19 @@ sealed partial class EditorApp : IDisposable
     void ScrollPalette(ref int offset, int top, int contentHeight)
     {
         int maximum = Math.Max(0, contentHeight - (GetScreenHeight() - Bottom - top));
-        if (GetMouseX() < Left && GetMouseY() >= top && GetMouseY() < GetScreenHeight() - Bottom && pendingAction == null && play == null)
+        if (GetMouseX() < Left && GetMouseY() >= top && GetMouseY() < GetScreenHeight() - Bottom && !ModalOpen && play == null)
             offset -= (int)(GetMouseWheelMove() * 45);
         offset = Math.Clamp(offset, 0, maximum);
     }
     void ChangeCharacter(string? id)
     {
         document.Checkpoint(); chosenCharacter = id; document.Map.Player.Asset = id;
+    }
+    void ChangeActorCharacter(string? id, bool npc)
+    {
+        if (!npc) { ChangeCharacter(id); return; }
+        chosenNpcCharacter = id;
+        if (Selection is NpcData actor) { document.Checkpoint(); actor.Asset = id ?? ""; }
     }
     void Stepper(string label, float value, int x, int y, Action<float> change, float step)
     {
@@ -396,12 +522,23 @@ sealed partial class EditorApp : IDisposable
     void Delete()
     {
         if (Selection is not { } selected) return;
-        document.Checkpoint(); document.Map.Objects.Remove(selected); selectedId = null;
+        document.Checkpoint();
+        if (selected is NpcData npc) document.Map.Npcs.Remove(npc);
+        else document.Map.Objects.Remove(selected);
+        selectedId = null;
     }
     void Duplicate()
     {
         if (Selection is not { } selected) return;
-        selectedId = document.Place(selected.Asset, selected.Position + new Vector3(1, 0, 1), selected.Height, selected.Solid).Id;
+        if (selected is NpcData npc)
+        {
+            // Clone the complete tree, preserving branch IDs within the new NPC.
+            var copy = System.Text.Json.JsonSerializer.Deserialize<NpcData>(System.Text.Json.JsonSerializer.Serialize(npc))!;
+            document.Checkpoint(); copy.Id = Guid.NewGuid().ToString("N");
+            var p = document.Map.Clamp(npc.Position + new Vector3(1, 0, 1)); copy.X = p.X; copy.Z = p.Z;
+            document.Map.Npcs.Add(copy); selectedId = copy.Id;
+        }
+        else selectedId = document.Place(selected.Asset, selected.Position + new Vector3(1, 0, 1), selected.Height, selected.Solid).Id;
     }
     bool Save()
     {
@@ -410,6 +547,7 @@ sealed partial class EditorApp : IDisposable
     }
     void Request(string action)
     {
+        if (action == "new") { OpenNewMap(); return; }
         if (document.Dirty) pendingAction = action;
         else Complete(action);
     }
@@ -418,14 +556,15 @@ sealed partial class EditorApp : IDisposable
         if (action == "exit") { exit = true; return; }
         if (action == "new")
         {
-            document.New(); selectedId = null; chosenCharacter = null; focus = Vector3.Zero;
-            camera.Snap(focus); status = "New map. Choose objects and paint the ground.";
+            document.New(newWidth, newDepth); selectedId = null; chosenCharacter = null; focus = Vector3.Zero;
+            gesture = dragging = dragArmed = false;
+            camera.Snap(focus); status = $"New map: {newWidth} x {newDepth} tiles.";
             return;
         }
         try
         {
             document.Load(mapPath); selectedId = null; chosenCharacter = document.Map.Player.Asset;
-            focus = document.Map.Player.Position; camera.Snap(focus); status = "Map loaded.";
+            focus = document.Map.GroundPosition(document.Map.Player.X, document.Map.Player.Z); camera.Snap(focus); status = "Map loaded.";
         }
         catch (Exception ex) when (ex is IOException or InvalidDataException or System.Text.Json.JsonException or UnauthorizedAccessException) { status = "Load failed: " + ex.Message; }
     }
@@ -455,16 +594,16 @@ sealed partial class EditorApp : IDisposable
     bool Button(string text, int x, int y, int width, bool active = false, bool enabled = true, bool modal = false)
     {
         var rect = new Rectangle(x, y, width, 30);
-        bool hover = enabled && CheckCollisionPointRec(GetMousePosition(), rect) && (pendingAction == null || modal);
+        bool hover = enabled && CheckCollisionPointRec(GetMousePosition(), rect) && (!ModalOpen || modal);
         DrawRectangleRec(rect, active ? new Color(41, 78, 70, 255) : hover ? new Color(48, 63, 77, 255) : Card);
         DrawRectangleLinesEx(rect, 1, active ? Accent : Border);
-        Label(text, x + (width - MeasureText(text, 13)) / 2, y + 9, 13, enabled ? active ? Accent : Text : Muted);
+        Label(text, x + (width - UiText.Measure(text, 13)) / 2, y + 9, 13, enabled ? active ? Accent : Text : Muted);
         return hover && IsMouseButtonPressed(MouseButton.Left);
     }
     bool AssetCard(Texture2D texture, string name, int x, int y, bool active, bool enabled)
     {
         var rect = new Rectangle(x, y, 102, 110);
-        bool hover = enabled && pendingAction == null && CheckCollisionPointRec(GetMousePosition(), rect);
+        bool hover = enabled && !ModalOpen && CheckCollisionPointRec(GetMousePosition(), rect);
         DrawRectangleRec(rect, hover ? new Color(47, 60, 72, 255) : Card);
         DrawRectangleLinesEx(rect, 1, active ? Accent : Border);
         float scale = Math.Min(84f / texture.Width, 78f / texture.Height);
@@ -475,12 +614,12 @@ sealed partial class EditorApp : IDisposable
     }
     static void Label(string text, int x, int y, int size, Color color, int maxWidth = 0)
     {
-        if (maxWidth > 0 && MeasureText(text, size) > maxWidth)
+        if (maxWidth > 0 && UiText.Measure(text, size) > maxWidth)
         {
-            while (text.Length > 0 && MeasureText(text + "...", size) > maxWidth) text = text[..^1];
+            while (text.Length > 0 && UiText.Measure(text + "...", size) > maxWidth) text = text[..^1];
             text += "...";
         }
-        DrawText(text, x, y, size, color);
+        UiText.Draw(text, x, y, size, color);
     }
     public void Dispose()
     {

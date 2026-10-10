@@ -25,6 +25,17 @@ sealed partial class EditorApp
         Input(7, x, y); Input(6, 0); TestFrame();
         Input(7, x, y); Input(5, 0); TestFrame();
     }
+    void Press(KeyboardKey key)
+    {
+        Input(2, (int)key); TestFrame(); Input(1, (int)key); TestFrame();
+    }
+    void ClickHeader(string name)
+    {
+        if (Enum.TryParse<EditTool>(name, out var editTool)) { Click(16 + (int)editTool * 82 + 40, 60); return; }
+        int start = 16 + Enum.GetValues<EditTool>().Length * 82;
+        int offset = name switch { "Undo" => 40, "Redo" => 112, "Save" => 199, "Load" => 275, "New" => 348, _ => throw new ArgumentException(name) };
+        Click(start + offset, 60);
+    }
     static void Verify(bool condition, string message)
     {
         if (!condition) throw new InvalidOperationException("Editor interaction check failed: " + message);
@@ -36,7 +47,7 @@ sealed partial class EditorApp
         document.Map.Objects.AddRange(MapData.CreateDemo(assets.Sprites.Keys).Objects);
         focus = Vector3.Zero; camera.Snap(focus);
         TestFrame();
-        Click(620, 60);
+        ClickHeader("Save");
         Verify(File.Exists(mapPath) && !document.Dirty, "Save button");
         int count = document.Map.Objects.Count;
         Click(220, 150); // Rocks category.
@@ -46,7 +57,7 @@ sealed partial class EditorApp
         Verify(document.Map.Objects.Count == count + 1, "map click places object");
         var placed = document.Map.Objects[^1];
         string id = placed.Id;
-        Click(60, 60); // Select tool.
+        ClickHeader("Select");
         var screen = GetWorldToScreenEx(renderer.GetSpriteQuad(camera.View, placed.Asset, placed.Position, placed.Height).Center, camera.View,
             (int)viewport.Width, (int)viewport.Height) + new Vector2(viewport.X, viewport.Y);
         int sx = (int)screen.X, sy = (int)screen.Y;
@@ -64,40 +75,121 @@ sealed partial class EditorApp
         Verify(document.Map.Objects.Count == count + 2, "duplicate button");
         Click(1360, 398);
         Verify(document.Map.Objects.Count == count + 1, "delete button");
-        Click(460, 60);
+        ClickHeader("Undo");
         Verify(document.Map.Objects.Count == count + 2, "undo deletion");
-        Click(530, 60);
+        ClickHeader("Redo");
         Verify(document.Map.Objects.Count == count + 1, "redo deletion");
-        Click(260, 60);
+        ClickHeader("Ground");
         Click(180, 220);
         string tiles = string.Join(',', document.Map.Tiles);
         Click(830, 650);
         Verify(string.Join(',', document.Map.Tiles) != tiles, "material palette and ground painting");
-        Click(365, 60);
+        ClickHeader("Player");
         Click(690, 620);
         Verify(document.Map.Player.Position != Vector3.Zero, "player spawn tool");
         Vector3 spawn = document.Map.Player.Position;
+        ClickHeader("NPC");
+        Click(780, 620);
+        Verify(document.Map.Npcs.Count == 1 && Selection is NpcData, "NPC tool places and selects an actor");
+        var npc = document.Map.Npcs.Single();
+        string npcId = npc.Id;
+        Click(1230, 437); // NPC name.
+        Verify(textEdit != null, "NPC name field opens text editor");
+        AppendEdit("Strażnik Żółw");
+        Press(KeyboardKey.Left); Press(KeyboardKey.Backspace); AppendEdit("ł");
+        Verify(textEdit!.Value == "Strażnik Żółw", "cursor navigation and insertion inside Polish text");
+        Press(KeyboardKey.Enter);
+        Verify(npc.Name == "Strażnik Żółw" && textEdit == null, "NPC name text applies");
+        Click(1370, 437); // Dialogue tree.
+        Verify(dialogueNpcId == npc.Id, "dialogue button opens graphical tree");
+        var greeting = npc.Dialogue.Node(npc.Dialogue.Node(npc.Dialogue.StartId).Next.Single());
+        var greetingRect = LayoutTree(npc.Dialogue)[greeting.Id];
+        Click((int)greetingRect.X + 50, (int)greetingRect.Y + 30);
+        Verify(dialogueNodeId == greeting.Id, "clicking a tree node selects it");
+        Click(GetScreenWidth() - 230, 200);
+        Verify(textEdit != null, "node text editor");
+        AppendEdit("Witaj, podróżniku!\nDokąd zmierzasz?");
+        Press(KeyboardKey.Five); // No tool shortcuts while typing.
+        Verify(dialogueNpcId != null && tool == EditTool.Select, "text entry captures editor shortcuts");
+        Click(GetScreenWidth() / 2 - 220, GetScreenHeight() / 2 + 205);
+        Verify(greeting.Text.StartsWith("Witaj, podróżniku!") && textEdit == null, "apply dialogue text");
+        TestFrame(); TestFrame();
+        WorldRenderer.Screenshot(Path.Combine(ProjectPaths.Root, "Editor", "obj", "dialogue-tree.png"));
+        int nodeCount = npc.Dialogue.Nodes.Count;
+        Click(GetScreenWidth() - 200, GetScreenHeight() - 230);
+        Verify(npc.Dialogue.Nodes.Count == nodeCount + 1 && DialogueNode?.Kind == DialogueKind.Player, "add a player reply from NPC node");
+        Click(GetScreenWidth() - 200, GetScreenHeight() - 188);
+        Verify(npc.Dialogue.Nodes.Count == nodeCount, "delete a dialogue branch");
+        Input(2, (int)KeyboardKey.LeftControl); Press(KeyboardKey.Z); Input(1, (int)KeyboardKey.LeftControl); TestFrame();
+        npc = document.Map.Npcs.Single();
+        Verify(npc.Dialogue.Nodes.Count == nodeCount + 1, "undo restores dialogue branch");
+        Input(2, (int)KeyboardKey.LeftControl); Press(KeyboardKey.Y); Input(1, (int)KeyboardKey.LeftControl); TestFrame();
+        npc = document.Map.Npcs.Single();
+        Verify(npc.Dialogue.Nodes.Count == nodeCount, "redo removes dialogue branch");
+        Press(KeyboardKey.Escape);
+        Verify(dialogueNpcId == null, "Escape closes dialogue editor");
+        Duplicate();
+        Verify(document.Map.Npcs.Count == 2 && System.Text.Json.JsonSerializer.Serialize(document.Map.Npcs[^1].Dialogue) == System.Text.Json.JsonSerializer.Serialize(npc.Dialogue), "duplicating an NPC copies its tree");
+        Delete();
+        npc = document.Map.Npcs.Single();
+        // Put the NPC near the spawn to test conversation input, without depending on camera projection.
+        ChangePosition(npc, spawn.X + 1, spawn.Z);
         Click(1360, 60);
         Verify(play != null, "play button");
         Input(2, (int)KeyboardKey.D);
         for (int i = 0; i < 10; i++) TestFrame();
         Input(1, (int)KeyboardKey.D); TestFrame();
         Verify(Vector3.Distance(play!.Player, spawn) > .1f, "playtest movement");
+        Press(KeyboardKey.E);
+        Verify(play.Dialogue.Active && play.Dialogue.Speaker?.Id == npcId, "E opens a nearby NPC conversation in playtest");
+        WorldRenderer.Screenshot(Path.Combine(ProjectPaths.Root, "Editor", "obj", "dialogue-playtest.png"));
+        var talkingPosition = play.Player;
+        Input(2, (int)KeyboardKey.D);
+        for (int i = 0; i < 5; i++) TestFrame();
+        Input(1, (int)KeyboardKey.D); TestFrame();
+        Verify(play.Player == talkingPosition, "dialogue stops player movement");
+        Press(KeyboardKey.One);
+        Verify(play.Dialogue.Active && play.Dialogue.Current?.Text.StartsWith("To Wildwood") == true, "keyboard reply follows branch");
+        Press(KeyboardKey.Escape);
+        Verify(play != null && !play.Dialogue.Active, "Escape closes conversation and keeps playtest running");
         Input(2, (int)KeyboardKey.F5); TestFrame(); Input(1, (int)KeyboardKey.F5); TestFrame();
         Verify(play == null && document.Map.Player.Position == spawn, "F5 returns without changing spawn");
-        Click(620, 60);
+        ClickHeader("Save");
         string saved = document.Map.Serialize();
         Verify(MapData.Load(mapPath).Serialize() == saved, "saved map matches edited scene");
-        Click(760, 60); // New map.
-        Verify(document.Map.Objects.Count == 0, "new map button");
-        Click(690, 60); // Load triggers dirty prompt.
+        ClickHeader("New");
+        Verify(creatingMap && document.Map.Serialize() == saved, "New opens size selection without changing the current map");
+        int nx = GetScreenWidth() / 2 - 270, ny = GetScreenHeight() / 2 - 170;
+        Click(nx + 70, ny + 226); // 32 x 32 preset.
+        for (int i = 0; i < 4; i++) Click(nx + 302, ny + 151); // Depth 28.
+        TestFrame(); TestFrame();
+        WorldRenderer.Screenshot(Path.Combine(ProjectPaths.Root, "Editor", "obj", "new-map-size.png"));
+        Click(nx + 130, ny + 300);
+        Verify(document.Map.Objects.Count == 0 && document.Map.Npcs.Count == 0 && document.Map.Width == 32 && document.Map.Depth == 28, "new map uses selected rectangular size");
+        ClickHeader("Load");
         Verify(pendingAction == "load", "unsaved work confirmation");
         Click(GetScreenWidth() / 2 - 230 + 215, GetScreenHeight() / 2 - 90 + 132);
         Verify(document.Map.Serialize() == saved && pendingAction == null, "discard and reload saved map");
+        ClickHeader("New");
+        Click(nx + 470, ny + 226); // 2048 x 2048 preset.
+        Verify(widthInput == "2048" && depthInput == "2048" && ValidDimensions, "maximum-size preset and four-digit fields");
+        Click(nx + 130, ny + 300);
+        Verify(document.Map.Width == 2048 && document.Map.Depth == 2048 && document.Map.Tiles.Length == 4_194_304, "create maximum-sized map through the UI");
+        TestFrame(); TestFrame();
+        WorldRenderer.Screenshot(Path.Combine(ProjectPaths.Root, "Editor", "obj", "large-map.png"));
+        ClickHeader("Ground");
+        Click(830, 650);
+        Verify(document.Map.Tiles.Contains(chosenTerrain), "paint on maximum-sized map");
+        document.Map.Save(Path.Combine(ProjectPaths.Root, "Editor", "obj", "large-interaction-test.json"));
+        Click(1360, 60);
+        Verify(play?.Map.Width == 2048 && play.Map.Tiles.Length == 4_194_304, "playtest maximum-sized map");
+        Press(KeyboardKey.F5);
+        Complete("load");
+        RunTerrainInteractionChecks();
         SetWindowSize(1120, 720); TestFrame(); TestFrame();
         Verify(canvas.Texture.Width == 608 && canvas.Texture.Height == 600, "resizable viewport");
         SetWindowSize(1440, 900); TestFrame(); TestFrame();
-        status = "Interaction checks passed: placement, picking, drag, paint, spawn, save/load and playtest.";
+        status = "Interaction checks passed: objects, terrain, sculpting, 3D water, 2048 map size, NPC/tree editing, save/load and conversations in playtest.";
         Render();
         WorldRenderer.Screenshot(Path.Combine(ProjectPaths.Root, "Editor", "editor-smoke.png"));
         Console.WriteLine(status);

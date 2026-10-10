@@ -17,6 +17,7 @@ sealed class WorldAssets : IDisposable
     public List<string> Warnings { get; } = [];
     public WorldAssets()
     {
+        UiText.Load();
         foreach (var directory in new[] { "objects", "characters", "terrain" })
         {
             string root = Path.Combine(ProjectPaths.AssetRoot, directory);
@@ -65,12 +66,13 @@ sealed class WorldAssets : IDisposable
     }
     public void Dispose()
     {
+        UiText.Unload();
         foreach (var sprite in Sprites.Values) UnloadTexture(sprite.Texture);
         foreach (var texture in Terrain.Values) UnloadTexture(texture);
     }
 }
 
-sealed class WorldRenderer(WorldAssets assets)
+sealed partial class WorldRenderer(WorldAssets assets)
 {
     public static void Screenshot(string path)
     {
@@ -78,40 +80,42 @@ sealed class WorldRenderer(WorldAssets assets)
         try { if (!ExportImage(image, path)) throw new IOException("Could not save screenshot: " + path); }
         finally { UnloadImage(image); }
     }
-    public void Draw(MapData map, Camera3D camera, bool grid, Vector3? playerPosition = null)
+    public void Draw(MapData map, Camera3D camera, bool grid, Vector3? playerPosition = null, int viewWidth = 0, int viewHeight = 0)
     {
-        DrawTerrain(map);
+        var bounds = TerrainVisibility.GetBounds(map, camera, viewWidth > 0 ? viewWidth : GetScreenWidth(), viewHeight > 0 ? viewHeight : GetScreenHeight());
+        DrawTerrain(map, bounds);
         if (grid)
         {
-            for (int x = 0; x <= map.Width; x++)
-                DrawLine3D(new(x - map.Width / 2f, .015f, -map.Depth / 2f), new(x - map.Width / 2f, .015f, map.Depth / 2f), new Color(220, 230, 220, x % 5 == 0 ? 95 : 35));
-            for (int z = 0; z <= map.Depth; z++)
-                DrawLine3D(new(-map.Width / 2f, .015f, z - map.Depth / 2f), new(map.Width / 2f, .015f, z - map.Depth / 2f), new Color(220, 230, 220, z % 5 == 0 ? 95 : 35));
+            for (int x = bounds.MinX; x <= bounds.MaxX; x++)
+            for (int z = bounds.MinZ; z < bounds.MaxZ; z++)
+                DrawLine3D(map.Vertex(x, z) + new Vector3(0, .02f, 0), map.Vertex(x, z + 1) + new Vector3(0, .02f, 0), new Color(220, 230, 220, x % 5 == 0 ? 95 : 35));
+            for (int z = bounds.MinZ; z <= bounds.MaxZ; z++)
+            for (int x = bounds.MinX; x < bounds.MaxX; x++)
+                DrawLine3D(map.Vertex(x, z) + new Vector3(0, .02f, 0), map.Vertex(x + 1, z) + new Vector3(0, .02f, 0), new Color(220, 230, 220, z % 5 == 0 ? 95 : 35));
         }
-        Vector3 player = playerPosition ?? map.Player.Position;
+        Vector3 player = playerPosition ?? map.GroundPosition(map.Player.X, map.Player.Z);
         var forward = Vector3.Normalize(camera.Target - camera.Position);
-        var items = map.Objects.Select(o => (o.Asset, o.Position, o.Height, Player: false))
-            .Append((map.Player.Asset ?? "", player, map.Player.Height, true))
+        var items = map.Objects.Select(o => (o.Asset, map.GroundPosition(o), o.Height, Fallback: Color.Magenta))
+            .Concat(map.Npcs.Select(n => (n.Asset, map.GroundPosition(n), n.Height, new Color(244, 192, 96, 255))))
+            .Append((map.Player.Asset ?? "", player, map.Player.Height, new Color(80, 183, 255, 255)))
             .OrderByDescending(o => Vector3.Dot(o.Item2 - camera.Position, forward));
         foreach (var item in items)
-            DrawSprite(camera, item.Item1, item.Item2, item.Item3, item.Item4 ? new Color(80, 183, 255, 255) : Color.Magenta);
+            DrawSprite(camera, item.Item1, item.Item2, item.Item3, item.Item4);
+        DrawWater(map, camera, bounds, (float)GetTime());
     }
-    void DrawTerrain(MapData map)
+    void DrawTerrain(MapData map, TerrainBounds bounds)
     {
-        foreach (var group in map.Tiles.Select((id, index) => (id, index)).GroupBy(t => t.id))
+        foreach (var group in bounds.Indices(map.Width).Select(index => (id: map.Tiles[index] == "water" ? "sand" : map.Tiles[index], index)).GroupBy(t => t.id))
         {
             var texture = assets.Terrain.GetValueOrDefault(group.Key, assets.Terrain["grass"]);
             Rlgl.SetTexture(texture.Id);
-            Rlgl.Begin((int)DrawMode.Quads);
-            Rlgl.Color4ub(255, 255, 255, 255);
-            Rlgl.Normal3f(0, 1, 0);
+            Rlgl.Begin((int)DrawMode.Triangles);
             foreach (var tile in group)
             {
-                float x = tile.index % map.Width - map.Width / 2f, z = tile.index / map.Width - map.Depth / 2f;
-                Rlgl.TexCoord2f(0, 0); Rlgl.Vertex3f(x, 0, z);
-                Rlgl.TexCoord2f(0, 1); Rlgl.Vertex3f(x, 0, z + 1);
-                Rlgl.TexCoord2f(1, 1); Rlgl.Vertex3f(x + 1, 0, z + 1);
-                Rlgl.TexCoord2f(1, 0); Rlgl.Vertex3f(x + 1, 0, z);
+                int x = tile.index % map.Width, z = tile.index / map.Width;
+                var a = map.Vertex(x, z); var b = map.Vertex(x, z + 1); var c = map.Vertex(x + 1, z + 1); var d = map.Vertex(x + 1, z);
+                TerrainTriangle(a, b, c, new(0, 0), new(0, 1), new(1, 1));
+                TerrainTriangle(a, c, d, new(0, 0), new(1, 1), new(1, 0));
             }
             Rlgl.End();
             Rlgl.SetTexture(0);
@@ -151,9 +155,9 @@ sealed class WorldRenderer(WorldAssets assets)
         float width = assets.Sprites.TryGetValue(id, out var asset) ? height * asset.Texture.Width / asset.Texture.Height : height * .6f;
         return BillboardGeometry.Create(camera, position, width, height);
     }
-    public void DrawOutline(Camera3D camera, SceneObject item, Color color)
+    public void DrawOutline(Camera3D camera, SceneObject item, Color color, MapData? map = null)
     {
-        var quad = GetSpriteQuad(camera, item.Asset, item.Position, item.Height);
+        var quad = GetSpriteQuad(camera, item.Asset, map?.GroundPosition(item) ?? item.Position, item.Height);
         var offset = quad.Normal * .01f;
         DrawLine3D(quad.BottomLeft + offset, quad.BottomRight + offset, color);
         DrawLine3D(quad.BottomRight + offset, quad.TopRight + offset, color);
@@ -163,9 +167,9 @@ sealed class WorldRenderer(WorldAssets assets)
     public SceneObject? Pick(MapData map, Camera3D camera, Ray ray)
     {
         SceneObject? result = null; float closest = float.MaxValue;
-        foreach (var item in map.Objects)
+        foreach (var item in map.Objects.Concat<SceneObject>(map.Npcs))
         {
-            var quad = GetSpriteQuad(camera, item.Asset, item.Position, item.Height);
+            var quad = GetSpriteQuad(camera, item.Asset, map.GroundPosition(item), item.Height);
             var hit = GetRayCollisionQuad(ray, quad.BottomLeft, quad.BottomRight, quad.TopRight, quad.TopLeft);
             if (hit.Hit && hit.Distance < closest) { closest = hit.Distance; result = item; }
         }
@@ -178,6 +182,11 @@ sealed class WorldRenderer(WorldAssets assets)
         return t >= 0 ? ray.Position + ray.Direction * t : null;
     }
     public static float CollisionRadius(SceneObject item) => Math.Clamp(item.Height * .13f, .2f, .8f);
-    public static bool CanWalk(MapData map, Vector3 p) => !map.Objects.Any(o => o.Solid &&
-        Vector2.Distance(new(p.X, p.Z), new(o.X, o.Z)) < CollisionRadius(o) + .25f);
+    public static bool CanWalk(MapData map, Vector3 p, Vector3? from = null)
+    {
+        if (!map.Contains(p.X, p.Z) || map.WaterDepthAt(p.X, p.Z) > .55f || TerrainGeometry.NormalAt(map, p.X, p.Z).Y < .64f) return false;
+        if (from is { } previous && Math.Abs(map.HeightAt(p.X, p.Z) - previous.Y) > .3f + Vector2.Distance(new(p.X, p.Z), new(previous.X, previous.Z)) * 1.2f) return false;
+        return !map.Objects.Concat<SceneObject>(map.Npcs).Any(o => o.Solid &&
+            Vector2.Distance(new(p.X, p.Z), new(o.X, o.Z)) < CollisionRadius(o) + .25f);
+    }
 }

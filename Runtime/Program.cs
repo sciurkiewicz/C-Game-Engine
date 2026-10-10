@@ -1,6 +1,21 @@
 ﻿using Raylib_cs;
 using static Raylib_cs.Raylib;
 
+if (args.Contains("--terrain-test"))
+{
+    TerrainChecks.Run();
+    return;
+}
+if (args.Contains("--map-test"))
+{
+    MapSizeChecks.Run();
+    return;
+}
+if (args.Contains("--dialogue-test"))
+{
+    DialogueChecks.Run();
+    return;
+}
 if (args.Contains("--camera-test"))
 {
     CameraChecks.Run();
@@ -15,6 +30,7 @@ if (args.Contains("--billboard-test"))
 SetConfigFlags(ConfigFlags.ResizableWindow | ConfigFlags.Msaa4xHint);
 InitWindow(1280, 800, "Wildwood | Runtime");
 SetWindowMinSize(800, 540);
+SetExitKey(KeyboardKey.Null);
 SetTargetFPS(60);
 try
 {
@@ -27,19 +43,24 @@ try
         ? throw new FileNotFoundException("Map not found.", mapPath) : MapData.CreateDemo(assets.Sprites.Keys);
     var session = new PlaySession(map);
     var renderer = new WorldRenderer(assets);
+    var dialogueUi = new DialogueOverlay();
     if (args.Contains("--close")) session.Camera.Zoom(100);
     if (args.Contains("--far")) session.Camera.Zoom(-100);
     session.Camera.Snap(session.Player);
     int frames = 0;
-    bool smoke = args.Contains("--smoke-test");
+    bool smoke = args.Contains("--smoke-test") || args.Contains("--dialogue-smoke-test");
+    if (args.Contains("--dialogue-smoke-test") && session.Map.Npcs.FirstOrDefault() is { } smokeNpc)
+        session.Dialogue.Begin(smokeNpc);
     while (!WindowShouldClose())
     {
+        if (IsKeyPressed(KeyboardKey.Escape) && !session.Dialogue.Active) break;
         session.Update(Math.Min(GetFrameTime(), .05f), GetMouseWheelMove());
         BeginDrawing();
         ClearBackground(new Color(38, 47, 54, 255));
         BeginMode3D(session.Camera.View);
         renderer.Draw(session.Map, session.Camera.View, true, session.Player);
         EndMode3D();
+        dialogueUi.Draw(session, new(0, 0, GetScreenWidth(), GetScreenHeight()));
         EndDrawing();
         if (smoke && ++frames == 12) WorldRenderer.Screenshot(Path.Combine(ProjectPaths.Root, "wildwood-smoke.png"));
         if (smoke && frames >= 15) break;
