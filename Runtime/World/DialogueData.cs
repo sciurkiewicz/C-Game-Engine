@@ -34,13 +34,25 @@ sealed class DialogueTree
         start.Next.Add(greeting.Id); greeting.Next.AddRange([question.Id, goodbye.Id]); question.Next.Add(answer.Id);
         return new() { StartId = start.Id, Nodes = [start, greeting, question, answer, goodbye] };
     }
-    public DialogueNode AddChild(string parentId)
+    public bool CanAddChild(string parentId, DialogueKind kind)
     {
         var parent = Node(parentId);
-        if (Nodes.Count >= MaxNodes || (parent.Kind != DialogueKind.Npc && parent.Next.Count != 0))
-            throw new InvalidOperationException("This node cannot have another child.");
-        var kind = parent.Kind == DialogueKind.Npc ? DialogueKind.Player : DialogueKind.Npc;
+        if (Nodes.Count >= MaxNodes || kind is not (DialogueKind.Player or DialogueKind.Npc)) return false;
+        return parent.Kind == DialogueKind.Npc
+            ? kind == DialogueKind.Npc || parent.Next.All(id => Node(id).Kind == DialogueKind.Player)
+            : kind == DialogueKind.Npc && parent.Next.Count == 0;
+    }
+    public DialogueNode AddChild(string parentId) => AddChild(parentId, Node(parentId).Kind == DialogueKind.Npc ? DialogueKind.Player : DialogueKind.Npc);
+    public DialogueNode AddChild(string parentId, DialogueKind kind)
+    {
+        if (!CanAddChild(parentId, kind)) throw new InvalidOperationException("This node cannot have another reply of this type.");
+        var parent = Node(parentId);
         var child = new DialogueNode { Kind = kind, Text = kind == DialogueKind.Player ? "Odpowiedź bohatera" : "Kwestia NPC" };
+        if (parent.Kind == DialogueKind.Npc && kind == DialogueKind.Npc)
+        {
+            // Insert the line before the existing continuation or choices, keeping their IDs and branches.
+            child.Next.AddRange(parent.Next); parent.Next.Clear();
+        }
         Nodes.Add(child); parent.Next.Add(child.Id);
         return child;
     }
@@ -48,12 +60,32 @@ sealed class DialogueTree
     {
         if (id == StartId || Node(StartId).Next.Contains(id))
             throw new InvalidOperationException("Keep Start and the first NPC line.");
-        var removed = new HashSet<string>();
-        var pending = new Stack<string>(); pending.Push(id);
-        while (pending.TryPop(out var current))
-            if (removed.Add(current)) foreach (string child in Node(current).Next) pending.Push(child);
-        foreach (var node in Nodes) node.Next.RemoveAll(removed.Contains);
-        Nodes.RemoveAll(n => removed.Contains(n.Id));
+        Node(id); // Reject a stale selection before changing the graph.
+        foreach (var node in Nodes) node.Next.RemoveAll(next => next == id);
+        Nodes.RemoveAll(n => n.Id == id);
+        RemoveUnreachable();
+    }
+    public void SetReplyTarget(string replyId, string? npcId)
+    {
+        var reply = Node(replyId);
+        if (reply.Kind != DialogueKind.Player || (npcId != null && Node(npcId).Kind != DialogueKind.Npc))
+            throw new ArgumentException("Select a player reply and an NPC line.");
+        reply.Next.Clear();
+        if (npcId != null) reply.Next.Add(npcId);
+        RemoveUnreachable();
+    }
+    void RemoveUnreachable()
+    {
+        var nodes = Nodes.ToDictionary(n => n.Id);
+        var reachable = Reachable(nodes);
+        Nodes.RemoveAll(n => !reachable.Contains(n.Id));
+    }
+    HashSet<string> Reachable(Dictionary<string, DialogueNode> nodes)
+    {
+        var reachable = new HashSet<string>(); var pending = new Stack<string>(); pending.Push(StartId);
+        while (pending.TryPop(out var id))
+            if (reachable.Add(id)) foreach (string child in nodes[id].Next) pending.Push(child);
+        return reachable;
     }
     public void Validate()
     {
@@ -73,20 +105,19 @@ sealed class DialogueTree
                 throw new InvalidDataException("A player reply can lead to one NPC line.");
             foreach (string id in node.Next)
             {
-                if (!nodes.TryGetValue(id, out var child) || child.Kind != (node.Kind == DialogueKind.Npc ? DialogueKind.Player : DialogueKind.Npc))
-                    throw new InvalidDataException("Dialogue must alternate NPC lines and player replies.");
+                if (!nodes.TryGetValue(id, out var child) || child.Kind == DialogueKind.Start ||
+                    (node.Kind != DialogueKind.Npc && child.Kind != DialogueKind.Npc))
+                    throw new InvalidDataException("Start and player replies must lead to NPC lines.");
                 parents[id] = parents.GetValueOrDefault(id) + 1;
             }
+            if (node.Kind == DialogueKind.Npc && node.Next.Any(id => nodes[id].Kind == DialogueKind.Npc) && node.Next.Count != 1)
+                throw new InvalidDataException("An NPC line can have one NPC continuation or a list of player replies.");
         }
-        if (parents.ContainsKey(StartId) || Nodes.Any(n => n.Id != StartId && parents.GetValueOrDefault(n.Id) != 1))
-            throw new InvalidDataException("Each dialogue node must have exactly one parent.");
-        var visited = new HashSet<string>(); var stack = new Stack<string>(); stack.Push(StartId);
-        while (stack.TryPop(out var id))
-        {
-            if (!visited.Add(id)) throw new InvalidDataException("Dialogue cycles are not allowed.");
-            foreach (string child in nodes[id].Next) stack.Push(child);
-        }
-        if (visited.Count != Nodes.Count) throw new InvalidDataException("Dialogue has unreachable nodes.");
+        if (parents.ContainsKey(StartId) || Nodes.Any(n => n.Kind == DialogueKind.Player && parents.GetValueOrDefault(n.Id) != 1))
+            throw new InvalidDataException("Each player reply must belong to one NPC line.");
+        // NPC lines can have multiple incoming links, including returns to earlier lines.
+        // Runtime follows one choice or continuation per input; cycles never advance automatically.
+        if (Reachable(nodes).Count != Nodes.Count) throw new InvalidDataException("Dialogue has unreachable nodes.");
     }
 }
 
@@ -97,7 +128,9 @@ sealed class DialogueSession
     public DialogueNode? Current { get; private set; }
     public bool Active => Speaker != null;
     public IReadOnlyList<DialogueNode> Choices => Speaker == null || Current == null ? [] :
-        Current.Next.Select(Speaker.Dialogue.Node).ToArray();
+        Current.Next.Select(Speaker.Dialogue.Node).Where(n => n.Kind == DialogueKind.Player).ToArray();
+    public DialogueNode? Continuation => Speaker == null || Current == null ? null :
+        Current.Next.Select(Speaker.Dialogue.Node).FirstOrDefault(n => n.Kind == DialogueKind.Npc);
     public void Begin(NpcData npc)
     {
         npc.Dialogue.Validate();
@@ -111,6 +144,12 @@ sealed class DialogueSession
         var reply = choices[index];
         if (reply.Next.Count == 0) Close();
         else Current = Speaker!.Dialogue.Node(reply.Next.Single());
+    }
+    public void Advance()
+    {
+        if (!Active) return;
+        if (Continuation is { } next) Current = next;
+        else if (Choices.Count == 0) Close();
     }
     public void Close() { Speaker = null; Current = null; }
 }

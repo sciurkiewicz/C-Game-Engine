@@ -2,7 +2,7 @@ using System.Numerics;
 using Raylib_cs;
 using static Raylib_cs.Raylib;
 
-enum EditTool { Select, Place, Ground, Player, NPC, Sculpt, Water }
+enum EditTool { Select, Place, Ground, Player, NPC, Sculpt, Water, Chest, Monster }
 
 sealed partial class EditorApp : IDisposable
 {
@@ -13,6 +13,8 @@ sealed partial class EditorApp : IDisposable
     readonly string mapPath;
     readonly FollowCamera camera = new(Vector3.Zero);
     readonly DialogueOverlay dialogueUi = new();
+    readonly InventoryOverlay inventoryUi = new();
+    readonly CombatOverlay combatUi = new();
     RenderTexture2D canvas;
     Vector3 focus;
     EditTool tool = EditTool.Select;
@@ -20,6 +22,7 @@ sealed partial class EditorApp : IDisposable
     string chosenAsset = "", chosenTerrain = "grass";
     string? chosenCharacter;
     string? chosenNpcCharacter;
+    string? chosenMonsterCharacter;
     float placeHeight = 2;
     bool placeSolid = true, snap = true, grid = true, exit, closeRequested;
     int category = 1, scroll, brushRadius, groundScroll, characterScroll;
@@ -37,8 +40,8 @@ sealed partial class EditorApp : IDisposable
     static readonly Color Background = new(17, 23, 31, 255), Panel = new(24, 32, 43, 255),
         Card = new(33, 44, 57, 255), Border = new(49, 64, 79, 255), Text = new(222, 233, 239, 255),
         Muted = new(140, 160, 176, 255), Accent = new(104, 217, 175, 255);
-    SceneObject? Selection => document.Map.Objects.Concat<SceneObject>(document.Map.Npcs).FirstOrDefault(o => o.Id == selectedId);
-    bool ModalOpen => pendingAction != null || creatingMap || dialogueNpcId != null || textEdit != null;
+    SceneObject? Selection => document.Map.SceneEntities.FirstOrDefault(o => o.Id == selectedId);
+    bool ModalOpen => pendingAction != null || creatingMap || dialogueNpcId != null || textEdit != null || ItemEditorOpen || monsterSettingsId != null;
 
     public EditorApp(string mapPath)
     {
@@ -63,8 +66,9 @@ sealed partial class EditorApp : IDisposable
         chosenCharacter = map.Player.Asset;
         focus = map.GroundPosition(map.Player.X, map.Player.Z);
         camera.Snap(focus);
-        int missing = map.Objects.Count(o => !assets.Sprites.ContainsKey(o.Asset)) + map.Tiles.Distinct().Count(t => !assets.Terrain.ContainsKey(t)) +
+        int missing = map.Objects.Count(o => !assets.Sprites.ContainsKey(o.Asset)) + map.Chests.Count(c => !assets.Sprites.ContainsKey(c.Asset)) + map.Tiles.Distinct().Count(t => !assets.Terrain.ContainsKey(t)) +
             map.Npcs.Count(n => n.Asset != "" && !assets.Sprites.ContainsKey(n.Asset)) +
+            map.Monsters.Count(m => m.Asset != "" && !assets.Sprites.ContainsKey(m.Asset)) +
             (map.Player.Asset != null && !assets.Sprites.ContainsKey(map.Player.Asset) ? 1 : 0);
         if (missing > 0) status = $"Missing assets: {missing}. Placeholders are shown; original references are preserved.";
         if (assets.Warnings.Count > 0) status = $"Could not load {assets.Warnings.Count} images. Other assets are available.";
@@ -107,11 +111,13 @@ sealed partial class EditorApp : IDisposable
     {
         if (textEdit != null) { UpdateTextEdit(); return; }
         if (creatingMap) { UpdateNewMap(); return; }
+        if (ItemEditorOpen) { UpdateItemEditor(); return; }
+        if (monsterSettingsId != null) { UpdateMonsterSettings(); return; }
         if (dialogueNpcId != null) { UpdateDialogueEditor(); return; }
         if (IsKeyPressed(KeyboardKey.F5)) TogglePlay();
         if (play != null)
         {
-            if (IsKeyPressed(KeyboardKey.Escape) && !play.Dialogue.Active) { play = null; return; }
+            if (IsKeyPressed(KeyboardKey.Escape) && !play.Dialogue.Active && !play.InventoryOpen) { play = null; return; }
             play.Update(dt, InViewport ? GetMouseWheelMove() : 0);
             return;
         }
@@ -131,6 +137,8 @@ sealed partial class EditorApp : IDisposable
         if (IsKeyPressed(KeyboardKey.Five)) tool = EditTool.NPC;
         if (IsKeyPressed(KeyboardKey.Six)) tool = EditTool.Sculpt;
         if (IsKeyPressed(KeyboardKey.Seven)) tool = EditTool.Water;
+        if (IsKeyPressed(KeyboardKey.Eight)) tool = EditTool.Chest;
+        if (IsKeyPressed(KeyboardKey.Nine)) tool = EditTool.Monster;
         if (IsKeyPressed(KeyboardKey.G)) grid = !grid;
         if (IsKeyPressed(KeyboardKey.F)) { focus = Selection is { } item ? document.Map.GroundPosition(item) : document.Map.GroundPosition(document.Map.Player.X, document.Map.Player.Z); camera.Snap(focus); }
         if (IsKeyPressed(KeyboardKey.Escape)) { tool = EditTool.Select; selectedId = null; }
@@ -193,8 +201,17 @@ sealed partial class EditorApp : IDisposable
         if (tool == EditTool.NPC && IsMouseButtonPressed(MouseButton.Left))
         {
             selectedId = document.PlaceNpc(chosenNpcCharacter, point).Id;
-            tool = EditTool.Select;
-            status = "NPC placed. Edit its name and dialogue in Properties.";
+            status = "NPC placed. Click to place another; Select (1) opens its properties.";
+        }
+        if (tool == EditTool.Chest && IsMouseButtonPressed(MouseButton.Left))
+        {
+            selectedId = document.PlaceChest(point).Id;
+            status = "Chest placed. Click to place another; Items assigns its contents.";
+        }
+        if (tool == EditTool.Monster && IsMouseButtonPressed(MouseButton.Left))
+        {
+            selectedId = document.PlaceMonster(chosenMonsterCharacter, point).Id;
+            status = "Monster placed. Click to place another; Stats configures combat.";
         }
         if (tool == EditTool.Water && IsMouseButtonPressed(MouseButton.Left))
         {
@@ -246,6 +263,10 @@ sealed partial class EditorApp : IDisposable
                     renderer.DrawSprite(view, chosenCharacter ?? "", point, document.Map.Player.Height, new Color(80, 183, 255, 130), 130);
                 if (tool == EditTool.NPC)
                     renderer.DrawSprite(view, chosenNpcCharacter ?? "", point, 1.6f, new Color(244, 192, 96, 130), 130);
+                if (tool == EditTool.Chest)
+                    renderer.DrawSprite(view, ChestData.DefaultAsset, point, 1.4f, new Color(190, 140, 70, 130), 130);
+                if (tool == EditTool.Monster)
+                    renderer.DrawSprite(view, chosenMonsterCharacter ?? "", point, 1.6f, new Color(222, 75, 86, 130), 130);
                 if (tool == EditTool.Ground)
                 {
                     float x = MathF.Floor(ground.X + document.Map.Width / 2f) - document.Map.Width / 2f + .5f;
@@ -270,11 +291,13 @@ sealed partial class EditorApp : IDisposable
         DrawPalette();
         DrawInspector();
         DrawRectangle(0, GetScreenHeight() - Bottom, GetScreenWidth(), Bottom, Panel);
-        Label(status, 16, GetScreenHeight() - 22, 13, Muted, GetScreenWidth() - 342);
-        Label($"{document.Map.Objects.Count} objects / {document.Map.Npcs.Count} NPC  |  {document.Map.Width} x {document.Map.Depth}", GetScreenWidth() - 310, GetScreenHeight() - 22, 13, Accent);
+        Label(status, 16, GetScreenHeight() - 22, 13, Muted, GetScreenWidth() - 440);
+        Label($"{document.Map.Objects.Count} obj / {document.Map.Npcs.Count} NPC / {document.Map.Chests.Count} chest / {document.Map.Monsters.Count} monster | {document.Map.Width} x {document.Map.Depth}", GetScreenWidth() - 422, GetScreenHeight() - 22, 12, Accent);
         DrawRectangle(Left + 12, Top + 12, 154, 25, new Color(17, 23, 31, 220));
         Label(play != null ? "PLAYTEST  /  F5 to stop" : "PERSPECTIVE  /  2.5D", Left + 20, Top + 19, 12, play != null ? Accent : Text);
-        if (play != null && pendingAction == null) dialogueUi.Draw(play, viewport);
+        if (play != null && pendingAction == null) { combatUi.Draw(play, viewport); dialogueUi.Draw(play, viewport); inventoryUi.Draw(play, viewport); }
+        if (monsterSettingsId != null) DrawMonsterSettings();
+        if (ItemEditorOpen) DrawItemEditor();
         if (dialogueNpcId != null) DrawDialogueEditor();
         if (creatingMap) DrawNewMap();
         if (textEdit != null) DrawTextEdit();
@@ -288,11 +311,11 @@ sealed partial class EditorApp : IDisposable
         Label("MAP EDITOR", 152, 18, 12, Muted);
         Label(Path.GetFileName(mapPath) + (document.Dirty ? "  /  unsaved" : "  /  saved"), Left + 14, 17, 14, Text, GetScreenWidth() - Left - 300);
         Label($"{document.Map.Width}m workspace  /  fixed camera", GetScreenWidth() - 264, 18, 12, Muted);
-        int x = 16;
+        int x = 16, width = ToolbarToolWidth;
         foreach (var t in Enum.GetValues<EditTool>())
         {
-            if (Button($"{(int)t + 1}  {t}", x, 46, 80, tool == t, play == null)) tool = t;
-            x += 82;
+            if (Button($"{(int)t + 1}  {t}", x, 46, width, tool == t, play == null)) tool = t;
+            x += width + 2;
         }
         if (Button("Undo", x + 8, 46, 65, false, play == null && document.CanUndo)) Undo();
         if (Button("Redo", x + 79, 46, 65, false, play == null && document.CanRedo)) Redo();
@@ -302,10 +325,25 @@ sealed partial class EditorApp : IDisposable
         if (Button(play == null ? "Play  F5" : "Stop  F5", GetScreenWidth() - 128, 46, 110, true)) TogglePlay();
         DrawLine(0, Top - 1, GetScreenWidth(), Top - 1, Border);
     }
+    int ToolbarToolWidth => Math.Min(80, (GetScreenWidth() - 539) / Enum.GetValues<EditTool>().Length - 2);
     void DrawPalette()
     {
         DrawRectangle(0, Top, Left, GetScreenHeight() - Top - Bottom, Panel);
-        Label(tool == EditTool.Ground ? "GROUND MATERIALS" : tool == EditTool.Player ? "PLAYER" : tool == EditTool.NPC ? "NPC" : tool == EditTool.Sculpt ? "TERRAFORM" : tool == EditTool.Water ? "3D WATER" : "ASSET LIBRARY", 16, 108, 15, Text);
+        Label(tool == EditTool.Ground ? "GROUND MATERIALS" : tool == EditTool.Player ? "PLAYER" : tool == EditTool.NPC ? "NPC" : tool == EditTool.Monster ? "MONSTER" : tool == EditTool.Chest ? "CHESTS" : tool == EditTool.Sculpt ? "TERRAFORM" : tool == EditTool.Water ? "3D WATER" : "ASSET LIBRARY", 16, 108, 15, Text);
+        if (tool == EditTool.Chest)
+        {
+            if (assets.Sprites.TryGetValue(ChestData.DefaultAsset, out var chest)) AssetCard(chest.Texture, "Chest", 16, 146, true, false);
+            Label("Click the map to place a chest.", 16, 280, 13, Muted);
+            Label("Items on the right edits its loot.", 16, 304, 13, Muted);
+            Label("5 coloured item placeholders", 16, 338, 13, Accent);
+            int cy = 366;
+            foreach (var item in ItemCatalog.All)
+            {
+                DrawRectangle(16, cy, 14, 14, item.Color);
+                Label($"{item.Name}  {item.Width} x {item.Height}", 40, cy, 13, Text); cy += 30;
+            }
+            return;
+        }
         if (tool == EditTool.Sculpt)
         {
             int sy = 146;
@@ -329,13 +367,14 @@ sealed partial class EditorApp : IDisposable
             Label("Dig the basin with Sculpt first.", 16, 328, 13, Muted);
             return;
         }
-        if (tool is EditTool.Player or EditTool.NPC)
+        if (tool is EditTool.Player or EditTool.NPC or EditTool.Monster)
         {
             bool npc = tool == EditTool.NPC;
-            string? character = npc ? chosenNpcCharacter : chosenCharacter;
-            if (Button(npc ? "Gold placeholder" : "Blue placeholder", 16, 142, 218, character == null, play == null))
-                ChangeActorCharacter(null, npc);
-            Label(npc ? "Click the map to place an NPC." : "Click the map to set the spawn.", 16, 187, 13, Muted);
+            bool monster = tool == EditTool.Monster;
+            string? character = monster ? chosenMonsterCharacter : npc ? chosenNpcCharacter : chosenCharacter;
+            if (Button(monster ? "Red placeholder" : npc ? "Gold placeholder" : "Blue placeholder", 16, 142, 218, character == null, play == null))
+                ChangeActorCharacter(null, tool);
+            Label(monster ? "Click the map to place a monster." : npc ? "Click the map to place an NPC." : "Click the map to set the spawn.", 16, 187, 13, Muted);
             Label("Add PNG files to", 16, 212, 13, Muted);
             Label("Editor/characters", 16, 231, 13, Accent);
             var characters = assets.Sprites.Values.Where(s => s.Id.StartsWith("characters/")).ToArray();
@@ -345,7 +384,7 @@ sealed partial class EditorApp : IDisposable
             foreach (var sprite in characters)
             {
                 if (Button(sprite.Name, 16, cy, 218, character == sprite.Id,
-                    play == null && GetMouseY() >= 264 && GetMouseY() < GetScreenHeight() - Bottom)) ChangeActorCharacter(sprite.Id, npc);
+                    play == null && GetMouseY() >= 264 && GetMouseY() < GetScreenHeight() - Bottom)) ChangeActorCharacter(sprite.Id, tool);
                 cy += 36;
             }
             EndScissorMode();
@@ -398,9 +437,12 @@ sealed partial class EditorApp : IDisposable
             Label("WASD / arrows: move", x, 150, 14, Text);
             Label("Shift: run", x, 178, 14, Text);
             Label("Wheel: zoom", x, 206, 14, Text);
-            Label("E: talk to nearby NPC", x, 234, 14, Text);
-            Label("F5 / Escape: back to editor", x, 266, 13, Accent);
-            Label("Testing a copy of this map.", x, 291, 13, Muted);
+            Label("E: NPC / open chest", x, 234, 14, Text);
+            Label("I: inventory / Esc: close panel", x, 260, 13, Text);
+            Label("Space: attack nearby monster", x, 290, 13, Text);
+            Label("Enter after death: restart", x, 316, 13, Text);
+            Label("F5: back to editor", x, 346, 13, Accent);
+            Label("Testing a copy of this map.", x, 374, 13, Muted);
             return;
         }
         if (tool == EditTool.Ground)
@@ -417,6 +459,7 @@ sealed partial class EditorApp : IDisposable
             Label($"X  {document.Map.Player.X:0.0}     Z  {document.Map.Player.Z:0.0}", x, 180, 14, Text);
             Stepper("Height", document.Map.Player.Height, x, 216, v => { document.Checkpoint(); document.Map.Player.Height = Math.Clamp(v, .25f, 12); }, .25f);
             if (!WorldRenderer.CanWalk(document.Map, document.Map.GroundPosition(document.Map.Player.X, document.Map.Player.Z))) Label("Spawn blocked: object / terrain / water", x, 272, 12, new Color(255, 177, 100, 255));
+            if (Button("Starting inventory", x, 304, 218)) OpenItemEditor(null);
         }
         else if (tool == EditTool.Sculpt)
         {
@@ -453,9 +496,24 @@ sealed partial class EditorApp : IDisposable
             Label("Click the map, then edit dialogue.", x, 205, 13, Muted);
             if (Selection is NpcData npc && Button("Edit selected NPC dialogue", x, 245, 218)) OpenDialogue(npc);
         }
+        else if (tool == EditTool.Chest)
+        {
+            Label("Place a chest", x, 148, 16, Accent);
+            Label("Click the map, then choose Items.", x, 184, 13, Muted);
+            Label("Open it with E in Runtime.", x, 211, 13, Text);
+            if (Selection is ChestData chest && Button($"Items ({chest.Contents.Items.Count})", x, 245, 218)) OpenItemEditor(chest);
+        }
+        else if (tool == EditTool.Monster)
+        {
+            Label("Place a monster", x, 148, 16, Accent);
+            Label("Choose a character on the left.", x, 183, 13, Muted);
+            Label("Click the map, then edit Stats.", x, 205, 13, Muted);
+            Label("Chases and attacks the player.", x, 235, 13, Text);
+            if (Selection is MonsterData monster && Button("Edit selected monster stats", x, 273, 218)) monsterSettingsId = monster.Id;
+        }
         else if (Selection is { } selected)
         {
-            Label(selected is NpcData actor ? actor.Name : Path.GetFileNameWithoutExtension(selected.Asset), x, 148, 16, Accent, 220);
+            Label(selected is NpcData actor ? actor.Name : selected is MonsterData namedMonster ? namedMonster.Name : selected is ChestData namedChest ? namedChest.Name : Path.GetFileNameWithoutExtension(selected.Asset), x, 148, 16, Accent, 220);
             Stepper("X", selected.X, x, 184, v => ChangePosition(selected, v, selected.Z), .5f);
             Stepper("Z", selected.Z, x, 234, v => ChangePosition(selected, selected.X, v), .5f);
             Stepper("Height", selected.Height, x, 284, v => { document.Checkpoint(); selected.Height = Math.Clamp(v, .25f, 12); }, .25f);
@@ -469,6 +527,21 @@ sealed partial class EditorApp : IDisposable
                 if (Button("Sprite", x + 74, 423, 66)) { chosenNpcCharacter = npc.Asset == "" ? null : npc.Asset; tool = EditTool.NPC; }
                 if (Button("Dialogue", x + 148, 423, 70, true)) OpenDialogue(npc);
             }
+            else if (selected is ChestData chest)
+            {
+                if (Button("Name", x, 423, 66)) BeginTextEdit("Chest name", chest.Name, 80, false, value =>
+                { if (string.IsNullOrWhiteSpace(value)) return; document.Checkpoint(); chest.Name = value.Trim(); });
+                if (Button($"Items ({chest.Contents.Items.Count})", x + 74, 423, 144, true)) OpenItemEditor(chest);
+            }
+            else if (selected is MonsterData monster)
+            {
+                if (Button("Name", x, 423, 66)) BeginTextEdit("Monster name", monster.Name, 80, false, value =>
+                { if (string.IsNullOrWhiteSpace(value)) return; document.Checkpoint(); monster.Name = value.Trim(); });
+                if (Button("Sprite", x + 74, 423, 66)) { chosenMonsterCharacter = monster.Asset == "" ? null : monster.Asset; tool = EditTool.Monster; }
+                if (Button("Stats", x + 148, 423, 70, true)) monsterSettingsId = monster.Id;
+            }
+            else if (selected.Asset == ChestData.DefaultAsset && Button("Enable chest contents", x, 423, 218))
+            { var converted = document.ConvertToChest(selected); selectedId = converted.Id; OpenItemEditor(converted); }
         }
         else
         {
@@ -502,9 +575,15 @@ sealed partial class EditorApp : IDisposable
     {
         document.Checkpoint(); chosenCharacter = id; document.Map.Player.Asset = id;
     }
-    void ChangeActorCharacter(string? id, bool npc)
+    void ChangeActorCharacter(string? id, EditTool actorTool)
     {
-        if (!npc) { ChangeCharacter(id); return; }
+        if (actorTool == EditTool.Monster)
+        {
+            chosenMonsterCharacter = id;
+            if (Selection is MonsterData monster) { document.Checkpoint(); monster.Asset = id ?? ""; }
+            return;
+        }
+        if (actorTool == EditTool.Player) { ChangeCharacter(id); return; }
         chosenNpcCharacter = id;
         if (Selection is NpcData actor) { document.Checkpoint(); actor.Asset = id ?? ""; }
     }
@@ -517,20 +596,25 @@ sealed partial class EditorApp : IDisposable
     }
     void Choose(SpriteAsset asset)
     {
-        chosenAsset = asset.Id; placeHeight = asset.DefaultHeight; placeSolid = asset.DefaultSolid; tool = EditTool.Place;
+        chosenAsset = asset.Id; placeHeight = asset.DefaultHeight; placeSolid = asset.DefaultSolid;
+        tool = asset.Id == ChestData.DefaultAsset ? EditTool.Chest : EditTool.Place;
     }
     void Delete()
     {
         if (Selection is not { } selected) return;
         document.Checkpoint();
         if (selected is NpcData npc) document.Map.Npcs.Remove(npc);
+        else if (selected is ChestData chest) document.Map.Chests.Remove(chest);
+        else if (selected is MonsterData monster) document.Map.Monsters.Remove(monster);
         else document.Map.Objects.Remove(selected);
         selectedId = null;
     }
     void Duplicate()
     {
         if (Selection is not { } selected) return;
-        if (selected is NpcData npc)
+        if (selected is ChestData chest) selectedId = document.DuplicateChest(chest).Id;
+        else if (selected is MonsterData monster) selectedId = document.DuplicateMonster(monster).Id;
+        else if (selected is NpcData npc)
         {
             // Clone the complete tree, preserving branch IDs within the new NPC.
             var copy = System.Text.Json.JsonSerializer.Deserialize<NpcData>(System.Text.Json.JsonSerializer.Serialize(npc))!;
@@ -574,7 +658,7 @@ sealed partial class EditorApp : IDisposable
     {
         gesture = dragging = false;
         if (play != null) { play = null; status = "Returned to editing."; }
-        else { play = new(document.Map); status = "Playtest: WASD to move, F5 or Escape to return."; }
+        else { play = new(document.Map); status = "Playtest: WASD to move, Space to attack, F5 or Escape to return."; }
     }
     void DrawConfirmation()
     {
@@ -597,7 +681,8 @@ sealed partial class EditorApp : IDisposable
         bool hover = enabled && CheckCollisionPointRec(GetMousePosition(), rect) && (!ModalOpen || modal);
         DrawRectangleRec(rect, active ? new Color(41, 78, 70, 255) : hover ? new Color(48, 63, 77, 255) : Card);
         DrawRectangleLinesEx(rect, 1, active ? Accent : Border);
-        Label(text, x + (width - UiText.Measure(text, 13)) / 2, y + 9, 13, enabled ? active ? Accent : Text : Muted);
+        int size = UiText.Measure(text, 13) <= width - 8 ? 13 : 11;
+        Label(text, x + (width - UiText.Measure(text, size)) / 2, y + 9, size, enabled ? active ? Accent : Text : Muted);
         return hover && IsMouseButtonPressed(MouseButton.Left);
     }
     bool AssetCard(Texture2D texture, string name, int x, int y, bool active, bool enabled)

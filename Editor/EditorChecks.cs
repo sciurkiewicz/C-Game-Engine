@@ -5,6 +5,9 @@ static class EditorChecks
     public static void Run()
     {
         DialogueChecks.Run();
+        DialogueLayoutChecks.Run();
+        InventoryChecks.Run();
+        MonsterChecks.Run();
         TerrainChecks.Run();
         MapSizeChecks.Run();
         var sizes = new MapDocument(new MapData(), true);

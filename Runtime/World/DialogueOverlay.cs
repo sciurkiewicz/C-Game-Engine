@@ -14,7 +14,7 @@ sealed class DialogueOverlay
         if (!dialogue.Active)
         {
             nodeId = null;
-            if (play.NearbyNpc is { } nearby)
+            if (play.PlayerAlive && !play.InventoryOpen && play.InteractionTarget is NpcData nearby)
             {
                 string hint = $"E  Porozmawiaj: {nearby.Name}";
                 int width = Math.Min((int)bounds.Width - 24, UiText.Measure(hint, 18) + 32);
@@ -45,8 +45,8 @@ sealed class DialogueOverlay
         {
             var close = new Rectangle(x + 20, y + h - 65, w - 40, 40);
             DrawRectangleRec(close, new Color(48, 64, 78, 255));
-            UiText.Draw("Enter / kliknij: zakończ rozmowę", x + 34, (int)close.Y + 11, 17, Text);
-            if (IsKeyPressed(KeyboardKey.Enter) || (IsMouseButtonPressed(MouseButton.Left) && CheckCollisionPointRec(GetMousePosition(), close))) dialogue.Close();
+            UiText.Draw(dialogue.Continuation != null ? "Enter / kliknij: dalej" : "Enter / kliknij: zakończ rozmowę", x + 34, (int)close.Y + 11, 17, Text);
+            if (IsKeyPressed(KeyboardKey.Enter) || (IsMouseButtonPressed(MouseButton.Left) && CheckCollisionPointRec(GetMousePosition(), close))) dialogue.Advance();
             return;
         }
         var choiceBox = new Rectangle(x + 20, y + 184, w - 40, h - 220);

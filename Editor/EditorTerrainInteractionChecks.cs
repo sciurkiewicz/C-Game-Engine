@@ -14,7 +14,7 @@ sealed partial class EditorApp
         for (int i = 0; i < 30; i++) { Input(7, mx, my); TestFrame(); }
         Input(5, 0); TestFrame();
         float height = document.Map.HeightAt(0, 0);
-        Verify(height > .5f, "sculpt tool raises terrain under the cursor");
+        Verify(height > .5f && tool == EditTool.Sculpt, "sculpting raises terrain and keeps the Sculpt tab");
         Verify(document.Map.Heights.All(h => h == MapData.SnapElevation(h)), "sculpt stores elevations in 0.25 steps");
         ClickHeader("Undo"); Verify(document.Map.HeightAt(0, 0) == 0, "one undo restores a held sculpt stroke");
         ClickHeader("Redo"); Verify(document.Map.HeightAt(0, 0) > .5f, "redo restores sculpt stroke");
@@ -33,11 +33,11 @@ sealed partial class EditorApp
         screen = GetWorldToScreenEx(document.Map.GroundPosition(0, 0), camera.View, (int)viewport.Width, (int)viewport.Height) + new Vector2(viewport.X, viewport.Y);
         mx = (int)screen.X; my = (int)screen.Y;
         ClickHeader("Water"); Click(mx, my);
-        Verify(document.Map.WaterCells.Any(mask => mask != 0) && document.Map.Heights.SequenceEqual(bed), "one click fills the basin without changing its bed");
+        Verify(document.Map.WaterCells.Any(mask => mask != 0) && document.Map.Heights.SequenceEqual(bed) && tool == EditTool.Water, "filling a basin preserves its bed and keeps the Water tab");
         Verify(!WorldRenderer.CanWalk(document.Map, document.Map.GroundPosition(.5f, .5f)), "new deep lake blocks runtime walking");
         ClickHeader("Undo"); Verify(document.Map.WaterDepthAt(0, 0) == 0 && document.Map.Heights.SequenceEqual(bed), "undo fill preserves the sculpted basin");
         ClickHeader("Redo"); Click(80, 204); Click(mx, my);
-        Verify(document.Map.WaterDepthAt(0, 0) == 0 && document.Map.Heights.SequenceEqual(bed), "drain tool removes water without changing terrain");
+        Verify(document.Map.WaterDepthAt(0, 0) == 0 && document.Map.Heights.SequenceEqual(bed) && tool == EditTool.Water, "draining preserves terrain and keeps the Water tab");
         Click(80, 160); Click(mx, my);
         Verify(document.Map.WaterDepthAt(0, 0) > .5f, "drained basin can be filled again");
         // A picturesque fixture also exercises triangles, grounded sprites and clipped shores.

@@ -31,8 +31,8 @@ sealed partial class EditorApp
     }
     void ClickHeader(string name)
     {
-        if (Enum.TryParse<EditTool>(name, out var editTool)) { Click(16 + (int)editTool * 82 + 40, 60); return; }
-        int start = 16 + Enum.GetValues<EditTool>().Length * 82;
+        if (Enum.TryParse<EditTool>(name, out var editTool)) { Click(16 + (int)editTool * (ToolbarToolWidth + 2) + ToolbarToolWidth / 2, 60); return; }
+        int start = 16 + Enum.GetValues<EditTool>().Length * (ToolbarToolWidth + 2);
         int offset = name switch { "Undo" => 40, "Redo" => 112, "Save" => 199, "Load" => 275, "New" => 348, _ => throw new ArgumentException(name) };
         Click(start + offset, 60);
     }
@@ -54,7 +54,7 @@ sealed partial class EditorApp
         Click(65, 235); // First rock.
         Verify(tool == EditTool.Place && chosenAsset.Contains("rocks/"), "asset palette selection");
         Click(960, 625);
-        Verify(document.Map.Objects.Count == count + 1, "map click places object");
+        Verify(document.Map.Objects.Count == count + 1 && tool == EditTool.Place, "map click places an object and keeps the Place tab");
         var placed = document.Map.Objects[^1];
         string id = placed.Id;
         ClickHeader("Select");
@@ -62,7 +62,7 @@ sealed partial class EditorApp
             (int)viewport.Width, (int)viewport.Height) + new Vector2(viewport.X, viewport.Y);
         int sx = (int)screen.X, sy = (int)screen.Y;
         Click(sx, sy);
-        Verify(selectedId == id, "ray picking selects the rendered sprite");
+        Verify(selectedId == id && tool == EditTool.Select, "ray picking selects the rendered sprite and keeps the Select tab");
         Vector3 before = placed.Position;
         Input(7, sx, sy); Input(6, 0); TestFrame();
         Input(7, sx - 80, sy + 30); TestFrame();
@@ -83,16 +83,23 @@ sealed partial class EditorApp
         Click(180, 220);
         string tiles = string.Join(',', document.Map.Tiles);
         Click(830, 650);
-        Verify(string.Join(',', document.Map.Tiles) != tiles, "material palette and ground painting");
+        Verify(string.Join(',', document.Map.Tiles) != tiles && tool == EditTool.Ground, "painting keeps the Ground tab");
         ClickHeader("Player");
         Click(690, 620);
-        Verify(document.Map.Player.Position != Vector3.Zero, "player spawn tool");
+        Verify(document.Map.Player.Position != Vector3.Zero && tool == EditTool.Player, "setting the spawn keeps the Player tab");
         Vector3 spawn = document.Map.Player.Position;
         ClickHeader("NPC");
         Click(780, 620);
-        Verify(document.Map.Npcs.Count == 1 && Selection is NpcData, "NPC tool places and selects an actor");
+        Verify(document.Map.Npcs.Count == 1 && Selection is NpcData && tool == EditTool.NPC, "placing an NPC keeps the NPC tab");
+        Click(GetScreenWidth() - Right + 125, 260);
+        Verify(dialogueNpcId == Selection!.Id, "NPC tab opens the placed actor's dialogue");
+        Press(KeyboardKey.Escape); Verify(tool == EditTool.NPC && dialogueNpcId == null, "closing dialogue keeps the NPC tab");
+        Click(780, 620);
+        Verify(document.Map.Npcs.Count == 2 && tool == EditTool.NPC, "next map click places another NPC");
+        ClickHeader("Undo"); Verify(document.Map.Npcs.Count == 1 && tool == EditTool.NPC, "undo repeated NPC placement keeps the tab");
+        ClickHeader("Select");
         var npc = document.Map.Npcs.Single();
-        string npcId = npc.Id;
+        string npcId = npc.Id; selectedId = npcId;
         Click(1230, 437); // NPC name.
         Verify(textEdit != null, "NPC name field opens text editor");
         AppendEdit("Strażnik Żółw");
@@ -186,10 +193,15 @@ sealed partial class EditorApp
         Press(KeyboardKey.F5);
         Complete("load");
         RunTerrainInteractionChecks();
+        SpriteWaterChecks.Run(assets);
+        RunInventoryInteractionChecks();
+        RunDialogueLinkInteractionChecks();
+        RunDialogueSequenceInteractionChecks();
+        RunMonsterInteractionChecks();
         SetWindowSize(1120, 720); TestFrame(); TestFrame();
         Verify(canvas.Texture.Width == 608 && canvas.Texture.Height == 600, "resizable viewport");
         SetWindowSize(1440, 900); TestFrame(); TestFrame();
-        status = "Interaction checks passed: objects, terrain, sculpting, 3D water, 2048 map size, NPC/tree editing, save/load and conversations in playtest.";
+        status = "Interaction checks passed: objects, terrain, 3D water, 2048 maps, NPC/dialogues, items/chests, monsters/combat, save/load and playtest.";
         Render();
         WorldRenderer.Screenshot(Path.Combine(ProjectPaths.Root, "Editor", "editor-smoke.png"));
         Console.WriteLine(status);

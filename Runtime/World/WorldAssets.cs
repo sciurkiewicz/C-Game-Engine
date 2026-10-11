@@ -15,8 +15,26 @@ sealed class WorldAssets : IDisposable
     public Dictionary<string, SpriteAsset> Sprites { get; } = [];
     public Dictionary<string, Texture2D> Terrain { get; } = [];
     public List<string> Warnings { get; } = [];
+    public Shader SpriteShader { get; }
     public WorldAssets()
     {
+        SpriteShader = LoadShaderFromMemory(null, """
+            #version 330
+            in vec2 fragTexCoord;
+            in vec4 fragColor;
+            uniform sampler2D texture0;
+            uniform vec4 colDiffuse;
+            out vec4 finalColor;
+            void main()
+            {
+                vec4 color = texture(texture0, fragTexCoord) * colDiffuse * fragColor;
+                // Invisible PNG pixels must not write depth and cut holes in the water pass.
+                if (color.a <= 0.01) discard;
+                finalColor = color;
+            }
+            """);
+        if (!IsShaderValid(SpriteShader) || SpriteShader.Id == Rlgl.GetShaderIdDefault())
+            throw new InvalidOperationException("Cannot load sprite transparency shader.");
         UiText.Load();
         foreach (var directory in new[] { "objects", "characters", "terrain" })
         {
@@ -67,6 +85,7 @@ sealed class WorldAssets : IDisposable
     public void Dispose()
     {
         UiText.Unload();
+        UnloadShader(SpriteShader);
         foreach (var sprite in Sprites.Values) UnloadTexture(sprite.Texture);
         foreach (var texture in Terrain.Values) UnloadTexture(texture);
     }
@@ -95,12 +114,17 @@ sealed partial class WorldRenderer(WorldAssets assets)
         }
         Vector3 player = playerPosition ?? map.GroundPosition(map.Player.X, map.Player.Z);
         var forward = Vector3.Normalize(camera.Target - camera.Position);
-        var items = map.Objects.Select(o => (o.Asset, map.GroundPosition(o), o.Height, Fallback: Color.Magenta))
-            .Concat(map.Npcs.Select(n => (n.Asset, map.GroundPosition(n), n.Height, new Color(244, 192, 96, 255))))
+        var items = map.SceneEntities.Select(o => (o.Asset, map.GroundPosition(o), o.Height,
+                Fallback: o is NpcData ? new Color(244, 192, 96, 255) : o is MonsterData ? new Color(222, 75, 86, 255) : o is ChestData ? new Color(190, 140, 70, 255) : Color.Magenta))
             .Append((map.Player.Asset ?? "", player, map.Player.Height, new Color(80, 183, 255, 255)))
             .OrderByDescending(o => Vector3.Dot(o.Item2 - camera.Position, forward));
-        foreach (var item in items)
-            DrawSprite(camera, item.Item1, item.Item2, item.Item3, item.Item4);
+        BeginShaderMode(assets.SpriteShader);
+        try
+        {
+            foreach (var item in items)
+                DrawSpriteGeometry(camera, item.Item1, item.Item2, item.Item3, item.Item4);
+        }
+        finally { EndShaderMode(); }
         DrawWater(map, camera, bounds, (float)GetTime());
     }
     void DrawTerrain(MapData map, TerrainBounds bounds)
@@ -122,6 +146,12 @@ sealed partial class WorldRenderer(WorldAssets assets)
         }
     }
     public void DrawSprite(Camera3D camera, string id, Vector3 position, float height, Color fallback, byte alpha = 255)
+    {
+        BeginShaderMode(assets.SpriteShader);
+        try { DrawSpriteGeometry(camera, id, position, height, fallback, alpha); }
+        finally { EndShaderMode(); }
+    }
+    void DrawSpriteGeometry(Camera3D camera, string id, Vector3 position, float height, Color fallback, byte alpha = 255)
     {
         var quad = GetSpriteQuad(camera, id, position, height);
         if (assets.Sprites.TryGetValue(id, out var asset))
@@ -167,7 +197,7 @@ sealed partial class WorldRenderer(WorldAssets assets)
     public SceneObject? Pick(MapData map, Camera3D camera, Ray ray)
     {
         SceneObject? result = null; float closest = float.MaxValue;
-        foreach (var item in map.Objects.Concat<SceneObject>(map.Npcs))
+        foreach (var item in map.SceneEntities)
         {
             var quad = GetSpriteQuad(camera, item.Asset, map.GroundPosition(item), item.Height);
             var hit = GetRayCollisionQuad(ray, quad.BottomLeft, quad.BottomRight, quad.TopRight, quad.TopLeft);
@@ -182,11 +212,11 @@ sealed partial class WorldRenderer(WorldAssets assets)
         return t >= 0 ? ray.Position + ray.Direction * t : null;
     }
     public static float CollisionRadius(SceneObject item) => Math.Clamp(item.Height * .13f, .2f, .8f);
-    public static bool CanWalk(MapData map, Vector3 p, Vector3? from = null)
+    public static bool CanWalk(MapData map, Vector3 p, Vector3? from = null, string? ignoreId = null, float radius = .25f)
     {
         if (!map.Contains(p.X, p.Z) || map.WaterDepthAt(p.X, p.Z) > .55f || TerrainGeometry.NormalAt(map, p.X, p.Z).Y < .64f) return false;
         if (from is { } previous && Math.Abs(map.HeightAt(p.X, p.Z) - previous.Y) > .3f + Vector2.Distance(new(p.X, p.Z), new(previous.X, previous.Z)) * 1.2f) return false;
-        return !map.Objects.Concat<SceneObject>(map.Npcs).Any(o => o.Solid &&
-            Vector2.Distance(new(p.X, p.Z), new(o.X, o.Z)) < CollisionRadius(o) + .25f);
+        return !map.SceneEntities.Any(o => o.Solid && o.Id != ignoreId &&
+            Vector2.Distance(new(p.X, p.Z), new(o.X, o.Z)) < CollisionRadius(o) + radius);
     }
 }

@@ -9,7 +9,7 @@ sealed partial class EditorApp
     int newWidth = 48, newDepth = 48, dimensionFocus;
     bool replaceDimension;
     string widthInput = "48", depthInput = "48";
-    string? dialogueNpcId, dialogueNodeId;
+    string? dialogueNpcId, dialogueNodeId, replyLinkId;
     Vector2 treePan = new(20, 20);
     TextEdit? textEdit;
     sealed class TextEdit(string title, string value, int limit, bool multiline, Action<string> apply)
@@ -99,16 +99,23 @@ sealed partial class EditorApp
     void OpenDialogue(NpcData npc)
     {
         dialogueNpcId = npc.Id; dialogueNodeId = npc.Dialogue.StartId;
+        replyLinkId = null;
         treePan = new(20, 20); gesture = dragging = dragArmed = false;
     }
     Rectangle TreeArea => new(32, 112, GetScreenWidth() - 380, GetScreenHeight() - 174);
     void UpdateDialogueEditor()
     {
-        if (DialogueNpc == null || IsKeyPressed(KeyboardKey.Escape)) { dialogueNpcId = null; return; }
+        if (DialogueNpc == null) { dialogueNpcId = replyLinkId = null; return; }
+        if (IsKeyPressed(KeyboardKey.Escape))
+        {
+            if (replyLinkId != null) replyLinkId = null;
+            else dialogueNpcId = null;
+            return;
+        }
         bool ctrl = IsKeyDown(KeyboardKey.LeftControl) || IsKeyDown(KeyboardKey.RightControl);
         if (ctrl && IsKeyPressed(KeyboardKey.S)) Save();
-        if (ctrl && IsKeyPressed(KeyboardKey.Z)) Undo();
-        if (ctrl && IsKeyPressed(KeyboardKey.Y)) Redo();
+        if (ctrl && IsKeyPressed(KeyboardKey.Z)) { replyLinkId = null; Undo(); }
+        if (ctrl && IsKeyPressed(KeyboardKey.Y)) { replyLinkId = null; Redo(); }
         if (DialogueNpc == null) { dialogueNpcId = null; return; }
         if (DialogueNode == null) dialogueNodeId = DialogueNpc.Dialogue.StartId;
         if (CheckCollisionPointRec(GetMousePosition(), TreeArea))
@@ -118,28 +125,13 @@ sealed partial class EditorApp
             else treePan.Y += wheel * 45;
             if (IsMouseButtonDown(MouseButton.Middle) || IsMouseButtonDown(MouseButton.Right)) treePan += GetMouseDelta();
         }
-        if (IsKeyPressed(KeyboardKey.Delete)) DeleteDialogueBranch();
+        if (replyLinkId == null && IsKeyPressed(KeyboardKey.Delete)) DeleteDialogueBranch();
     }
-    Dictionary<string, Rectangle> LayoutTree(DialogueTree tree)
+    Dictionary<string, Rectangle> LayoutTree(DialogueTree tree) => LayoutTree(tree, out _);
+    Dictionary<string, Rectangle> LayoutTree(DialogueTree tree, out HashSet<(string From, string To)> branches)
     {
-        var rects = new Dictionary<string, Rectangle>();
-        int row = 0;
-        float Layout(string id, int depth)
-        {
-            var node = tree.Node(id);
-            float first = 0, last = 0;
-            if (node.Next.Count == 0) first = last = row++ * 104;
-            else
-            {
-                for (int i = 0; i < node.Next.Count; i++)
-                { float child = Layout(node.Next[i], depth + 1); if (i == 0) first = child; last = child; }
-            }
-            float center = (first + last) / 2;
-            rects[id] = new(TreeArea.X + treePan.X + depth * 230, TreeArea.Y + treePan.Y + center, 196, 82);
-            return center;
-        }
-        Layout(tree.StartId, 0);
-        return rects;
+        var layout = DialogueGraphLayout.Build(tree, new Vector2(TreeArea.X, TreeArea.Y) + treePan);
+        branches = layout.Branches; return layout.Rects;
     }
     void DrawDialogueEditor()
     {
@@ -149,12 +141,13 @@ sealed partial class EditorApp
         DrawRectangle(0, 0, GetScreenWidth(), GetScreenHeight(), new Color(0, 0, 0, 210));
         DrawRectangle(16, 16, GetScreenWidth() - 32, GetScreenHeight() - 32, Panel);
         Label("DIALOGUE TREE / " + npc.Name, 32, 34, 22, Accent, GetScreenWidth() - 420);
-        Label("Start > NPC line > player replies > NPC line. Leaf nodes end the conversation.", 32, 74, 14, Muted);
+        Label(replyLinkId != null ? "Click an NPC line to redirect this reply. Escape cancels." :
+            "NPC can continue with NPC Reply or offer Player Reply options. Dashed arrows redirect.", 32, 74, 14, replyLinkId != null ? Accent : Muted);
         if (Button("Save", GetScreenWidth() - 320, 32, 80, false, enabled, true)) Save();
-        if (Button("Close", GetScreenWidth() - 220, 32, 80, false, enabled, true)) dialogueNpcId = null;
+        if (Button("Close", GetScreenWidth() - 220, 32, 80, false, enabled, true)) dialogueNpcId = replyLinkId = null;
         if (Button("Home", GetScreenWidth() - 120, 32, 80, false, enabled, true)) treePan = new(20, 20);
         DrawRectangleRec(TreeArea, Background);
-        var rects = LayoutTree(npc.Dialogue);
+        var rects = LayoutTree(npc.Dialogue, out var branches);
         BeginScissorMode((int)TreeArea.X, (int)TreeArea.Y, (int)TreeArea.Width, (int)TreeArea.Height);
         foreach (var node in npc.Dialogue.Nodes)
         {
@@ -162,51 +155,102 @@ sealed partial class EditorApp
             foreach (string child in node.Next)
             {
                 var to = rects[child];
-                DrawLineBezier(new(from.X + from.Width, from.Y + from.Height / 2), new(to.X, to.Y + to.Height / 2), 2, NodeColor(node.Kind));
+                if (branches.Contains((node.Id, child)))
+                    DrawLineBezier(new(from.X + from.Width, from.Y + from.Height / 2), new(to.X, to.Y + to.Height / 2), 2, NodeColor(node.Kind));
+                else DrawDialogueRedirect(from, to, node.Id == dialogueNodeId ? Accent : new Color(178, 142, 233, 255));
             }
         }
+        string? clicked = null;
         foreach (var node in npc.Dialogue.Nodes)
         {
             var rect = rects[node.Id];
             bool selected = node.Id == dialogueNodeId;
             DrawRectangleRec(rect, selected ? new Color(48, 63, 77, 255) : Card);
-            DrawRectangleLinesEx(rect, selected ? 2 : 1, NodeColor(node.Kind));
-            Label(node.Kind == DialogueKind.Start ? "START" : node.Kind == DialogueKind.Npc ? "NPC" : "PLAYER REPLY", (int)rect.X + 12, (int)rect.Y + 10, 13, NodeColor(node.Kind));
+            DrawRectangleLinesEx(rect, selected || (replyLinkId != null && node.Kind == DialogueKind.Npc) ? 2 : 1,
+                replyLinkId != null && node.Kind == DialogueKind.Npc ? Accent : NodeColor(node.Kind));
+            bool redirect = node.Next.Any(next => !branches.Contains((node.Id, next)));
+            Label(node.Kind == DialogueKind.Start ? "START" : node.Kind == DialogueKind.Npc ? "NPC REPLY" : redirect ? "PLAYER REPLY / LINK" : "PLAYER REPLY",
+                (int)rect.X + 12, (int)rect.Y + 10, 13, NodeColor(node.Kind), 172);
             var lines = UiText.Wrap(node.Kind == DialogueKind.Start ? "Conversation begins" : node.Text, 13, 172);
             for (int i = 0; i < Math.Min(2, lines.Count); i++) Label(lines[i], (int)rect.X + 12, (int)rect.Y + 33 + i * 18, 13, Text, 172);
-            if (enabled && CheckCollisionPointRec(GetMousePosition(), TreeArea) && CheckCollisionPointRec(GetMousePosition(), rect) && IsMouseButtonPressed(MouseButton.Left)) dialogueNodeId = node.Id;
+            if (enabled && CheckCollisionPointRec(GetMousePosition(), TreeArea) && CheckCollisionPointRec(GetMousePosition(), rect) && IsMouseButtonPressed(MouseButton.Left)) clicked = node.Id;
         }
         EndScissorMode();
+        if (clicked != null)
+        {
+            if (replyLinkId == null) dialogueNodeId = clicked;
+            else if (npc.Dialogue.Node(clicked).Kind == DialogueKind.Npc)
+            {
+                document.Checkpoint(); npc.Dialogue.SetReplyTarget(replyLinkId, clicked);
+                dialogueNodeId = replyLinkId; replyLinkId = null;
+            }
+        }
         Label("RMB / MMB drag: pan   |   Wheel: vertical   |   Shift + wheel: horizontal   |   Ctrl+Z / Y: undo / redo", 32, GetScreenHeight() - 46, 13, Muted);
         int x = GetScreenWidth() - 324;
         var selectedNode = DialogueNode;
         if (selectedNode == null) return;
         Label("NODE PROPERTIES", x, 114, 16, Text);
-        Label(selectedNode.Kind.ToString(), x, 150, 20, NodeColor(selectedNode.Kind));
+        Label(selectedNode.Kind == DialogueKind.Start ? "Start" : selectedNode.Kind == DialogueKind.Npc ? "NPC Reply" : "Player Reply", x, 150, 20, NodeColor(selectedNode.Kind));
+        int by = Math.Max(446, GetScreenHeight() - 244);
         if (selectedNode.Kind != DialogueKind.Start)
         {
             if (Button("Edit text", x, 186, 282, true, enabled, true))
                 BeginTextEdit("Dialogue text", selectedNode.Text, DialogueTree.MaxTextLength, true, value =>
                 { document.Checkpoint(); selectedNode.Text = value; });
             var preview = UiText.Wrap(selectedNode.Text, 15, 282);
-            for (int i = 0; i < Math.Min(10, preview.Count); i++) Label(preview[i], x, 234 + i * 19, 15, Text);
+            int maxLines = selectedNode.Kind == DialogueKind.Player ? Math.Max(0, (by - 190 - 234) / 19) : 10;
+            for (int i = 0; i < Math.Min(Math.Min(10, maxLines), preview.Count); i++) Label(preview[i], x, 234 + i * 19, 15, Text);
         }
         else Label("Start enters the first NPC line.", x, 192, 14, Muted);
-        int by = Math.Max(446, GetScreenHeight() - 244);
-        bool canAdd = npc.Dialogue.Nodes.Count < DialogueTree.MaxNodes && (selectedNode.Kind == DialogueKind.Npc || selectedNode.Next.Count == 0);
-        if (Button(selectedNode.Kind == DialogueKind.Npc ? "+ Player reply" : "+ NPC line", x, by, 282, true, enabled && canAdd, true))
+        if (selectedNode.Kind == DialogueKind.Player)
         {
-            document.Checkpoint(); dialogueNodeId = npc.Dialogue.AddChild(selectedNode.Id).Id;
-            FocusDialogueNode();
+            Label("REPLY DESTINATION", x, by - 164, 14, Accent);
+            Label(selectedNode.Next.Count == 0 ? "End conversation" : "NPC: " + npc.Dialogue.Node(selectedNode.Next.Single()).Text.Replace('\n', ' ').Replace('\r', ' '),
+                x, by - 140, 14, Text, 282);
+            Label("Changing it replaces the next branch.", x, by - 118, 12, Muted);
+            if (Button(replyLinkId == null ? "Redirect to NPC" : "Cancel redirect", x, by - 92, 282, replyLinkId != null, enabled, true))
+                replyLinkId = replyLinkId == null ? selectedNode.Id : null;
+            if (Button("End after this reply", x, by - 50, 282, false, enabled && replyLinkId == null && selectedNode.Next.Count > 0, true))
+            { document.Checkpoint(); npc.Dialogue.SetReplyTarget(selectedNode.Id, null); }
         }
+        bool canEdit = enabled && replyLinkId == null;
+        if (selectedNode.Kind == DialogueKind.Npc && selectedNode.Next.Count > 0)
+            Label(npc.Dialogue.Node(selectedNode.Next[0]).Kind == DialogueKind.Npc ? "Add Player Reply at the last NPC line." : "NPC Reply goes before these choices.",
+                x, by - 24, 12, Muted, 282);
+        if (Button("+ Player Reply", x, by, 135, true, canEdit && npc.Dialogue.CanAddChild(selectedNode.Id, DialogueKind.Player), true))
+            AddDialogueReply(DialogueKind.Player);
+        if (Button("+ NPC Reply", x + 147, by, 135, true, canEdit && npc.Dialogue.CanAddChild(selectedNode.Id, DialogueKind.Npc), true))
+            AddDialogueReply(DialogueKind.Npc);
         bool canDelete = selectedNode.Id != npc.Dialogue.StartId && !npc.Dialogue.Node(npc.Dialogue.StartId).Next.Contains(selectedNode.Id);
-        if (Button("Delete branch", x, by + 42, 282, false, enabled && canDelete, true)) DeleteDialogueBranch();
+        if (Button("Delete branch", x, by + 42, 282, false, canEdit && canDelete, true)) DeleteDialogueBranch();
         var parent = npc.Dialogue.Nodes.FirstOrDefault(n => n.Next.Contains(selectedNode.Id));
         int sibling = parent?.Next.IndexOf(selectedNode.Id) ?? -1;
-        if (Button("Reply up", x, by + 84, 135, false, enabled && sibling > 0, true)) MoveReply(selectedNode.Id, -1);
-        if (Button("Reply down", x + 147, by + 84, 135, false, enabled && parent != null && sibling < parent.Next.Count - 1, true)) MoveReply(selectedNode.Id, 1);
+        if (Button("Reply up", x, by + 84, 135, false, canEdit && sibling > 0, true)) MoveReply(selectedNode.Id, -1);
+        if (Button("Reply down", x + 147, by + 84, 135, false, canEdit && parent != null && sibling < parent.Next.Count - 1, true)) MoveReply(selectedNode.Id, 1);
         if (Button("Focus selected node", x, by + 126, 282, false, enabled, true)) FocusDialogueNode();
         Label($"{npc.Dialogue.Nodes.Count} / {DialogueTree.MaxNodes} nodes", x, by + 170, 13, Muted);
+    }
+    void AddDialogueReply(DialogueKind kind)
+    {
+        if (DialogueNpc == null || DialogueNode == null || !DialogueNpc.Dialogue.CanAddChild(DialogueNode.Id, kind)) return;
+        document.Checkpoint(); dialogueNodeId = DialogueNpc.Dialogue.AddChild(DialogueNode.Id, kind).Id;
+        FocusDialogueNode();
+    }
+    static void DrawDialogueRedirect(Rectangle from, Rectangle to, Color color)
+    {
+        var a = new Vector2(from.X + from.Width / 2, from.Y + from.Height);
+        var b = new Vector2(to.X + to.Width / 2, to.Y + to.Height);
+        float y = Math.Max(a.Y, b.Y) + 22;
+        void Dashed(Vector2 start, Vector2 end)
+        {
+            var delta = end - start; float length = delta.Length();
+            if (length < .01f) return;
+            var direction = delta / length;
+            for (float offset = 0; offset < length; offset += 10)
+                DrawLineEx(start + direction * offset, start + direction * Math.Min(offset + 6, length), 2, color);
+        }
+        Dashed(a, new(a.X, y)); Dashed(new(a.X, y), new(b.X, y)); Dashed(new(b.X, y), b);
+        DrawLineEx(b + new Vector2(-5, 8), b, 2, color); DrawLineEx(b + new Vector2(5, 8), b, 2, color);
     }
     void FocusDialogueNode()
     {

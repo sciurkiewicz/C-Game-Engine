@@ -37,6 +37,7 @@ sealed class PlayerStart
     public float Z { get; set; }
     public string? Asset { get; set; }
     public float Height { get; set; } = 1.6f;
+    public InventoryGrid Inventory { get; set; } = new();
     [JsonIgnore] public Vector3 Position => new(X, 0, Z);
 }
 
@@ -110,6 +111,8 @@ sealed partial class MapData
             Objects.Select(o => o.Id).Concat(Npcs.Select(n => n.Id)).Distinct().Count() != Objects.Count + Npcs.Count)
             throw new InvalidDataException("Invalid NPCs.");
         foreach (var npc in Npcs) npc.Dialogue.Validate();
+        ValidateMonsters();
+        ValidateInventory();
     }
     static bool ValidHeight(float h) => float.IsFinite(h) && h >= .25f && h <= 12;
     public static MapData CreateEmpty(int width = 48, int depth = 48)
@@ -131,6 +134,12 @@ sealed partial class MapData
         Add("objects/rocks/large/rock_01.png", 1, -5, 2);
         Add("objects/props/camp/campfire.png", 1, 3, 1.3f, false);
         Add("objects/vegetation/bushes/bush_01.png", 4, 5, 1.8f);
+        if (ids.Contains(ChestData.DefaultAsset))
+        {
+            var chest = new ChestData { X = -1, Z = 1 };
+            foreach (var item in ItemCatalog.All) chest.Contents.Add(item.Id);
+            map.Chests.Add(chest);
+        }
         for (int z = 0; z < map.Depth; z++)
             for (int x = 22; x <= 24; x++) map.Tiles[z * map.Width + x] = "dirt";
         return map;
