@@ -16,10 +16,13 @@ sealed class WorldAssets : IDisposable
     public Dictionary<string, Texture2D> Terrain { get; } = [];
     public List<string> Warnings { get; } = [];
     public Shader SpriteShader { get; }
+    TerrainBlending? terrainBlending;
+    public TerrainBlending TerrainBlending => terrainBlending ??= new();
+    TerrainChunkCache? terrainMeshes;
+    public TerrainChunkCache TerrainMeshes => terrainMeshes ??= new();
     public WorldAssets()
     {
-        SpriteShader = LoadShaderFromMemory(null, """
-            #version 330
+        SpriteShader = LoadShaderFromMemory(WorldLighting.VertexShader, WorldLighting.FragmentPrelude + """
             in vec2 fragTexCoord;
             in vec4 fragColor;
             uniform sampler2D texture0;
@@ -30,7 +33,7 @@ sealed class WorldAssets : IDisposable
                 vec4 color = texture(texture0, fragTexCoord) * colDiffuse * fragColor;
                 // Invisible PNG pixels must not write depth and cut holes in the water pass.
                 if (color.a <= 0.01) discard;
-                finalColor = color;
+                finalColor = vec4(color.rgb * sceneLight(), color.a);
             }
             """);
         if (!IsShaderValid(SpriteShader) || SpriteShader.Id == Rlgl.GetShaderIdDefault())
@@ -85,6 +88,8 @@ sealed class WorldAssets : IDisposable
     public void Dispose()
     {
         UiText.Unload();
+        terrainBlending?.Dispose();
+        terrainMeshes?.Dispose();
         UnloadShader(SpriteShader);
         foreach (var sprite in Sprites.Values) UnloadTexture(sprite.Texture);
         foreach (var texture in Terrain.Values) UnloadTexture(texture);
@@ -99,10 +104,13 @@ sealed partial class WorldRenderer(WorldAssets assets)
         try { if (!ExportImage(image, path)) throw new IOException("Could not save screenshot: " + path); }
         finally { UnloadImage(image); }
     }
-    public void Draw(MapData map, Camera3D camera, bool grid, Vector3? playerPosition = null, int viewWidth = 0, int viewHeight = 0)
+    public void Draw(MapData map, Camera3D camera, bool grid, Vector3? playerPosition = null, int viewWidth = 0, int viewHeight = 0, float? timeOfDay = null)
     {
+        float hour = timeOfDay ?? map.Environment.TimeOfDay;
         var bounds = TerrainVisibility.GetBounds(map, camera, viewWidth > 0 ? viewWidth : GetScreenWidth(), viewHeight > 0 ? viewHeight : GetScreenHeight());
-        DrawTerrain(map, bounds);
+        DrawTerrain(map, bounds, camera.Target, hour);
+        Vector3 player = playerPosition ?? map.GroundPosition(map.Player.X, map.Player.Z);
+        DrawShadows(map, player, hour, bounds);
         if (grid)
         {
             for (int x = bounds.MinX; x <= bounds.MaxX; x++)
@@ -112,38 +120,27 @@ sealed partial class WorldRenderer(WorldAssets assets)
             for (int x = bounds.MinX; x < bounds.MaxX; x++)
                 DrawLine3D(map.Vertex(x, z) + new Vector3(0, .02f, 0), map.Vertex(x + 1, z) + new Vector3(0, .02f, 0), new Color(220, 230, 220, z % 5 == 0 ? 95 : 35));
         }
-        Vector3 player = playerPosition ?? map.GroundPosition(map.Player.X, map.Player.Z);
         var forward = Vector3.Normalize(camera.Target - camera.Position);
-        var items = map.SceneEntities.Select(o => (o.Asset, map.GroundPosition(o), o.Height,
+        var items = map.SceneEntities.Select(o => (Entity: (SceneObject?)o, o.Asset, Position: map.GroundPosition(o), o.Height,
                 Fallback: o is NpcData ? new Color(244, 192, 96, 255) : o is MonsterData ? new Color(222, 75, 86, 255) : o is ChestData ? new Color(190, 140, 70, 255) : Color.Magenta))
-            .Append((map.Player.Asset ?? "", player, map.Player.Height, new Color(80, 183, 255, 255)))
-            .OrderByDescending(o => Vector3.Dot(o.Item2 - camera.Position, forward));
+            .Append((null, map.Player.Asset ?? "", player, map.Player.Height, new Color(80, 183, 255, 255)))
+            .OrderByDescending(o => Vector3.Dot(o.Item3 - camera.Position, forward));
+        WorldLighting.Apply(assets.SpriteShader, map, hour, camera.Target);
         BeginShaderMode(assets.SpriteShader);
         try
         {
             foreach (var item in items)
-                DrawSpriteGeometry(camera, item.Item1, item.Item2, item.Item3, item.Item4);
+            {
+                byte alpha = item.Entity == null ? (byte)255 : ObstacleAlpha(map, camera, item.Entity, playerPosition);
+                if (alpha < 255) { Rlgl.DrawRenderBatchActive(); Rlgl.DisableDepthMask(); }
+                DrawSpriteGeometry(camera, item.Asset, item.Position, item.Height, item.Fallback, alpha);
+                if (alpha < 255) { Rlgl.DrawRenderBatchActive(); Rlgl.EnableDepthMask(); }
+            }
         }
         finally { EndShaderMode(); }
-        DrawWater(map, camera, bounds, (float)GetTime());
-    }
-    void DrawTerrain(MapData map, TerrainBounds bounds)
-    {
-        foreach (var group in bounds.Indices(map.Width).Select(index => (id: map.Tiles[index] == "water" ? "sand" : map.Tiles[index], index)).GroupBy(t => t.id))
-        {
-            var texture = assets.Terrain.GetValueOrDefault(group.Key, assets.Terrain["grass"]);
-            Rlgl.SetTexture(texture.Id);
-            Rlgl.Begin((int)DrawMode.Triangles);
-            foreach (var tile in group)
-            {
-                int x = tile.index % map.Width, z = tile.index / map.Width;
-                var a = map.Vertex(x, z); var b = map.Vertex(x, z + 1); var c = map.Vertex(x + 1, z + 1); var d = map.Vertex(x + 1, z);
-                TerrainTriangle(a, b, c, new(0, 0), new(0, 1), new(1, 1));
-                TerrainTriangle(a, c, d, new(0, 0), new(1, 1), new(1, 0));
-            }
-            Rlgl.End();
-            Rlgl.SetTexture(0);
-        }
+        if (obstacleOpacity.Count > map.Objects.Count + map.Chests.Count + map.Npcs.Count + map.Monsters.Count + 32)
+        { var ids = map.SceneEntities.Select(o => o.Id).ToHashSet(); foreach (var id in obstacleOpacity.Keys.Where(id => !ids.Contains(id)).ToArray()) obstacleOpacity.Remove(id); }
+        DrawWater(map, camera, bounds, (float)GetTime(), hour);
     }
     public void DrawSprite(Camera3D camera, string id, Vector3 position, float height, Color fallback, byte alpha = 255)
     {
@@ -211,12 +208,12 @@ sealed partial class WorldRenderer(WorldAssets assets)
         float t = -ray.Position.Y / ray.Direction.Y;
         return t >= 0 ? ray.Position + ray.Direction * t : null;
     }
-    public static float CollisionRadius(SceneObject item) => Math.Clamp(item.Height * .13f, .2f, .8f);
+    public static float CollisionRadius(SceneObject item) => CollisionGeometry.Radius(item);
     public static bool CanWalk(MapData map, Vector3 p, Vector3? from = null, string? ignoreId = null, float radius = .25f)
     {
         if (!map.Contains(p.X, p.Z) || map.WaterDepthAt(p.X, p.Z) > .55f || TerrainGeometry.NormalAt(map, p.X, p.Z).Y < .64f) return false;
         if (from is { } previous && Math.Abs(map.HeightAt(p.X, p.Z) - previous.Y) > .3f + Vector2.Distance(new(p.X, p.Z), new(previous.X, previous.Z)) * 1.2f) return false;
-        return !map.SceneEntities.Any(o => o.Solid && o.Id != ignoreId &&
-            Vector2.Distance(new(p.X, p.Z), new(o.X, o.Z)) < CollisionRadius(o) + radius);
+        return !map.SceneEntities.Any(o => o.Id != ignoreId && CollisionGeometry.Blocks(o,
+            from is { } start ? new(start.X, start.Z) : new(p.X, p.Z), new(p.X, p.Z), radius));
     }
 }

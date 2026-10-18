@@ -192,12 +192,16 @@ sealed partial class EditorApp
         Verify(play?.Map.Width == 2048 && play.Map.Tiles.Length == 4_194_304, "playtest maximum-sized map");
         Press(KeyboardKey.F5);
         Complete("load");
+        RunLaunchOptionsInteractionChecks();
         RunTerrainInteractionChecks();
+        TerrainBlendChecks.Run(assets);
         SpriteWaterChecks.Run(assets);
         RunInventoryInteractionChecks();
         RunDialogueLinkInteractionChecks();
         RunDialogueSequenceInteractionChecks();
         RunMonsterInteractionChecks();
+        RunWorldFeatureInteractionChecks();
+        WorldFeatureGpuChecks.Run(assets);
         SetWindowSize(1120, 720); TestFrame(); TestFrame();
         Verify(canvas.Texture.Width == 608 && canvas.Texture.Height == 600, "resizable viewport");
         SetWindowSize(1440, 900); TestFrame(); TestFrame();

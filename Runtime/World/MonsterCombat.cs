@@ -16,7 +16,7 @@ sealed class MonsterState(MonsterData actor, Vector3 spawn)
 
 sealed partial class PlaySession
 {
-    readonly MapSnapshot initialMap;
+    MapSnapshot initialMap;
     readonly Dictionary<string, MonsterState> monsters = [];
     public IEnumerable<MonsterState> Monsters => monsters.Values;
     public const int PlayerMaxHealth = 100, PlayerDamage = 10;
@@ -38,7 +38,7 @@ sealed partial class PlaySession
     {
         Dialogue.Close(); CloseInventory();
         Map = initialMap.Restore(); Player = Map.GroundPosition(Map.Player.X, Map.Player.Z);
-        InitializeCombat(); Camera.Snap(Player);
+        InitializeCombat(); ResetWorldState(); Camera.ApplySettings(Map.Runtime); Camera.Snap(Player);
     }
 
     // Also used by deterministic checks, without a Raylib window or input state.
@@ -103,8 +103,7 @@ sealed partial class PlaySession
         {
             var p = Vector3.Lerp(a, b, (float)i / samples);
             if (Map.HeightAt(p.X, p.Z) > p.Y) return false;
-            if (Map.SceneEntities.Any(o => o.Id != ignoredActor && o.Solid &&
-                Vector2.Distance(new(p.X, p.Z), new(o.X, o.Z)) < WorldRenderer.CollisionRadius(o) &&
+            if (Map.SceneEntities.Any(o => o.Id != ignoredActor && CollisionGeometry.Blocks(o, new(p.X, p.Z), new(p.X, p.Z), 0) &&
                 p.Y >= Map.HeightAt(o.X, o.Z) && p.Y <= Map.HeightAt(o.X, o.Z) + o.Height)) return false;
         }
         return true;

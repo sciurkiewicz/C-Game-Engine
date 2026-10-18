@@ -20,7 +20,7 @@ sealed partial class PlaySession
     public bool OpenChest(ChestData chest)
     {
         if (!PlayerAlive || Dialogue.Active || !Map.Chests.Contains(chest) || Vector3.Distance(Map.GroundPosition(chest), Player) > TalkDistance) return false;
-        OpenedChest = chest; InventoryOpen = true; return true;
+        chest.Opened = true; OpenedChest = chest; InventoryOpen = true; return true;
     }
     public void ToggleInventory()
     {
@@ -29,16 +29,20 @@ sealed partial class PlaySession
         else { OpenedChest = null; InventoryOpen = true; }
     }
     public void CloseInventory() { InventoryOpen = false; OpenedChest = null; }
-    public PlaySession(MapData map)
+    public PlaySession(MapData map, string? sourcePath = null, string? progressPath = null)
     {
+        entryMapPath = CurrentMapPath = Path.GetFullPath(sourcePath ?? ProjectPaths.MapFile);
+        ProgressPath = progressPath ?? GameProgress.SavePath(entryMapPath);
         initialMap = MapSnapshot.Capture(map);
         Map = initialMap.Restore();
         Player = Map.GroundPosition(Map.Player.X, Map.Player.Z);
-        Camera = new FollowCamera(Player);
+        Camera = new FollowCamera(Player, Map.Runtime);
         InitializeCombat();
+        ResetWorldState();
     }
     public void Update(float dt, float wheel)
     {
+        UpdateProgressInput(dt);
         if (!PlayerAlive)
         {
             if (IsKeyPressed(KeyboardKey.Enter)) Restart();
@@ -73,12 +77,11 @@ sealed partial class PlaySession
         if (move.LengthSquared() > 0)
         {
             move = Vector3.Normalize(move) * (IsKeyDown(KeyboardKey.LeftShift) ? 6 : 3.6f) * dt;
-            var next = Map.Clamp(Player + new Vector3(move.X, 0, 0));
-            if (WorldRenderer.CanWalk(Map, next, Player)) Player = next;
-            next = Map.Clamp(Player + new Vector3(0, 0, move.Z));
-            if (WorldRenderer.CanWalk(Map, next, Player)) Player = next;
+            TryMovePlayer(Player + new Vector3(move.X, 0, 0));
+            TryMovePlayer(Player + new Vector3(0, 0, move.Z));
         }
         Camera.Update(Player, dt);
         UpdateCombat(dt, IsKeyDown(KeyboardKey.Space));
+        AdvanceWorld(dt);
     }
 }

@@ -21,6 +21,7 @@ static class SpriteWaterChecks
         try
         {
             var map = MapData.CreateEmpty(16, 16);
+            map.Environment.Shadows = false; // Isolate alpha/depth behavior from an object's ground shadow.
             map.WaterLevel = .5f; map.WaveHeight = 0; map.WaterCells = Enumerable.Repeat((byte)3, map.Tiles.Length).ToArray();
             map.Player.X = map.Player.Z = -7;
             var renderer = new WorldRenderer(assets);

@@ -1,6 +1,12 @@
 ﻿using Raylib_cs;
 using static Raylib_cs.Raylib;
 
+if (args.Contains("--world-test"))
+{
+    WorldFeatureChecks.Run();
+    return;
+}
+
 if (args.Contains("--monster-test"))
 {
     MonsterChecks.Run();
@@ -39,12 +45,27 @@ if (args.Contains("--billboard-test"))
 
 SetConfigFlags(ConfigFlags.ResizableWindow | ConfigFlags.Msaa4xHint);
 InitWindow(1280, 800, "Wildwood | Runtime");
+if (!IsWindowReady())
+{
+    Console.Error.WriteLine("Cannot open Runtime: no graphical display or OpenGL context is available.");
+    Environment.ExitCode = 1; return;
+}
 SetWindowMinSize(800, 540);
 SetExitKey(KeyboardKey.Null);
 SetTargetFPS(60);
 try
 {
     using var assets = new WorldAssets();
+    if (args.Contains("--world-gpu-test"))
+    {
+        WorldFeatureGpuChecks.Run(assets);
+        return;
+    }
+    if (args.Contains("--terrain-blend-test"))
+    {
+        TerrainBlendChecks.Run(assets);
+        return;
+    }
     if (args.Contains("--sprite-water-test"))
     {
         SpriteWaterChecks.Run(assets);
@@ -56,7 +77,10 @@ try
     string mapPath = mapArgument >= 0 ? Path.GetFullPath(args[mapArgument + 1]) : ProjectPaths.MapFile;
     var map = File.Exists(mapPath) ? MapData.Load(mapPath) : mapArgument >= 0
         ? throw new FileNotFoundException("Map not found.", mapPath) : MapData.CreateDemo(assets.Sprites.Keys);
-    var session = new PlaySession(map);
+    var session = new PlaySession(map, mapPath);
+    using var audio = new WorldAudio();
+    SetTargetFPS(map.Runtime.TargetFps);
+    int activeFps = map.Runtime.TargetFps;
     var renderer = new WorldRenderer(assets);
     var dialogueUi = new DialogueOverlay();
     var inventoryUi = new InventoryOverlay();
@@ -82,10 +106,12 @@ try
     {
         if (IsKeyPressed(KeyboardKey.Escape) && !session.Dialogue.Active && !session.InventoryOpen) break;
         session.Update(Math.Min(GetFrameTime(), .05f), GetMouseWheelMove());
+        if (activeFps != session.Map.Runtime.TargetFps) { activeFps = session.Map.Runtime.TargetFps; SetTargetFPS(activeFps); }
+        audio.Update(session, Math.Min(GetFrameTime(), .05f));
         BeginDrawing();
         ClearBackground(new Color(38, 47, 54, 255));
         BeginMode3D(session.Camera.View);
-        renderer.Draw(session.Map, session.Camera.View, true, session.Player);
+        renderer.Draw(session.Map, session.Camera.View, session.Map.Runtime.ShowGrid, session.Player, timeOfDay: session.TimeOfDay);
         EndMode3D();
         combatUi.Draw(session, new(0, 0, GetScreenWidth(), GetScreenHeight()));
         dialogueUi.Draw(session, new(0, 0, GetScreenWidth(), GetScreenHeight()));
@@ -102,4 +128,4 @@ catch (Exception ex) when (ex is IOException or InvalidDataException or System.T
     Console.Error.WriteLine("Cannot open game: " + ex.Message);
     Environment.ExitCode = 1;
 }
-finally { CloseWindow(); }
+finally { if (IsWindowReady()) CloseWindow(); }

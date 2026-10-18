@@ -42,6 +42,35 @@ Domyślny plik: `Runtime/Maps/world.json`. Argument `--map ścieżka.json` zmien
 
 Podgląd **Play** korzysta z kopii bieżącej mapy, także przed zapisem. Ruch w podglądzie nie zmienia punktu startowego. Osobny Runtime odczytuje mapę z dysku.
 
+Przycisk **View: Perspective / View: Isometric** u góry po prawej przełącza rzut w edytorze oraz ustawienie kamery gry. **Perspective** zachowuje dotychczasową perspektywę i zmianę nachylenia przy zoomie. **Isometric** to rzut ortograficzny z kierunkiem 45° i stałym nachyleniem około 35,26°; zoom zmienia skalę widoku. Przesuwanie kamery, zaznaczanie i przeciąganie działają w obu rzutach.
+
+**Menu hamburgerowe w prawym górnym rogu → Launch options** otwiera zaawansowane opcje uruchomieniowe: rzut kamery, początkową odległość kamery (15–50 m), widoczność siatki w grze i limit 30 / 60 / 120 FPS lub bez limitu. **Apply / Enter** zatwierdza, **Apply & Play** zatwierdza i uruchamia podgląd, **Cancel / Escape** odrzuca zmiany, a **Defaults** przywraca wartości domyślne w oknie. Zmiana ustawień jest jednym krokiem cofania. Zapisz mapę, aby używał ich również osobny Runtime. Starsze mapy zachowują dotychczasowy widok i ustawienia. Podczas Play opcje są nieaktywne; edytuj je po zatrzymaniu podglądu. Siatka edytora pozostaje niezależna od siatki gry.
+
+## Środowisko, triggery, prefabrykaty i kolizje
+
+Przycisk **World** u góry oraz **hamburger → Apply & world tools** otwierają panel funkcji świata. Zmiany są zapisywane z mapą i obsługują Ctrl+Z / Ctrl+Y. Okno blokuje skróty i edycję pod spodem; Escape je zamyka.
+
+| Zakładka | Możliwości |
+| --- | --- |
+| **Environment** | Oświetlenie, miękkie cienie pod obiektami, zanikanie przeszkód zasłaniających gracza, docelowa przezroczystość, godzina początkowa, cykl dnia i nocy, długość dnia, dźwięk i głośność. |
+| **Lights** | Dodawanie świateł w środku widoku; pozycja X/Z, wysokość, promień, intensywność, RGB i włączanie. Na klatkę wybieranych jest do 16 najbliższych świateł. Ogniska i pochodnie świecą automatycznie. |
+| **Sounds** | Emitery zapętlonego dźwięku: pozycja, promień, głośność i wybór klipu. **Listen** odtwarza próbkę. WAV/OGG/MP3 z `Editor/audio/` są dostępne obok generowanych placeholderów. Ogniska, pochodnie, woda oraz kroki mają dźwięki automatyczne. |
+| **Triggers** | **Draw area on map**: przeciągnij LMB, aby narysować prostokąt. Ustaw nazwę, rozmiar, Enabled, Once oraz akcję. |
+| **Prefabs** | Zapis grupy zaznaczonych aktorów do `Editor/prefabs/` i wielokrotne wstawianie na mapę. |
+| **Collision** | Wybór obiektu, automatyczny okrąg, własny okrąg, obracany prostokąt lub wielokąt, flagi drzwi i zanikania. |
+
+Akcje triggerów to **Message**, **Dialogue**, **ToggleDoor**, **SpawnMonster**, **Teleport** i **ChangeMap**. Kliknięcie przycisku Action przełącza akcję. Dla rozmowy lub drzwi wybierz Target; obiekt jest drzwiami po zaznaczeniu **Door** w Collision. SpawnMonster używa domyślnych statystyk lub szablonu wybranego spośród potworów mapy. Teleport i spawn mają współrzędne docelowe. ChangeMap wskazuje względny plik JSON z `Runtime/Maps/` i punkt wejścia na docelowej mapie. Zmiana mapy przenosi HP i EQ oraz zachowuje stan odwiedzonych map. Once działa raz w sesji i jest uwzględniane w zapisie postępu; pozostałe obszary wykonują akcję przy ponownym wejściu, nie w każdej klatce.
+
+**Shift+klik** dodaje lub usuwa aktora z grupy. Przeciąganie zaznaczonego obiektu przesuwa całą grupę; Ctrl+D duplikuje ją, Delete usuwa, a Ctrl+Z cofa operację. W Prefabs wybierz **Save selected group**, nadaj nazwę, następnie **Place prefab on map** i klikaj mapę. Dialogi, statystyki, zawartość skrzyń i kształty kolizji pozostają zachowane, a identyfikatory są nowe. Escape kończy wstawianie.
+
+W **Collision → Polygon → Draw polygon on map** klikaj narożniki, Enter zatwierdza, Backspace usuwa ostatni punkt, Escape anuluje. Wielokąt ma 3–32 wierzchołki, może być wklęsły, ale jego boki nie mogą się przecinać. Kolizje działają dla gracza, tras potworów i ataków; ruch nie przeskakuje przez cienkie ściany. Otwarte drzwi przepuszczają postacie. **Automatic** przywraca dawny okrąg zależny od wysokości obiektu.
+
+Zanikanie działa w Play/Runtime, gdy obiekt zasłania ciało gracza; przezroczystość zmienia się płynnie i wraca po odsłonięciu. Oświetlenie obejmuje teren, grafiki i wodę. Cienie są miękkimi cieniami kontaktowymi pod obiektami. Zmiana godziny w edytorze daje podgląd, a w grze czas biegnie po włączeniu cyklu dnia i nocy.
+
+**F6 w Play** zapisuje postęp, **F9** go wczytuje: pozycję, HP, EQ, skrzynie i drzwi, stan potworów, wykonane triggery i porę dnia, także na odwiedzonych mapach. Podgląd używa osobnego pliku w `Editor/obj/progress/`; nie nadpisuje mapy roboczej ani zapisu Runtime. **Ctrl+S** nadal zapisuje mapę, a nie stan gry.
+
+Teren ma siatki GPU w fragmentach **16 × 16** kafelków. Malowanie aktualizuje blendowanie bez przebudowy geometrii, terraformowanie odświeża tylko zmienione fragmenty, a przesuwanie widoku usuwa nieużywane siatki z cache. Cofanie i wczytanie mapy odświeżają cache automatycznie.
+
 ## Grafiki postaci i podłoża
 
 - `Editor/characters/` — pojedyncze PNG postaci, najlepiej z przezroczystym tłem. Wybór w narzędziu Player.
@@ -50,6 +79,8 @@ Podgląd **Play** korzysta z kopii bieżącej mapy, także przed zapisem. Ruch w
 Po dodaniu materiałów uruchom aplikację ponownie. Na razie grafiki postaci są statyczne: nie ma obsługi arkuszy animacji. Bez grafiki postaci wyświetlany jest niebieski znacznik. Wbudowane materiały podłoża to grass, dirt, sand i stone. Woda ma własne narzędzie Water i zachowuje wybrany materiał dna.
 
 **New / Ctrl+N** otwiera okno wyboru szerokości X i głębokości Z. Wpisz liczby, użyj przycisków +/- lub gotowych rozmiarów, w tym 2048 × 2048. Każdy bok może mieć 4–2048 kafelków; mapa może być prostokątna. Tab przełącza pole, Enter tworzy mapę, Escape anuluje. Po wybraniu rozmiaru edytor pyta o niezapisane zmiany. Utworzenie mapy można cofnąć.
+
+Tekstury podłoża płynnie blendują się między sąsiednimi kafelkami, także przy zbiegu czterech materiałów i na zboczach. Dotyczy to zarówno wbudowanych materiałów, jak i własnych PNG. Przejścia aktualizują się podczas malowania oraz cofania i działają identycznie w obu rzutach, Play oraz Runtime; istniejące mapy korzystają z nich automatycznie.
 
 ## Terraformowanie i woda
 
@@ -95,7 +126,7 @@ W **Play / F5** podejdź do NPC i naciśnij E. **Enter / kliknij: dalej** przech
 
 **Player → Starting inventory** otwiera ten sam edytor dla startowego ekwipunku bohatera (10×4 pola). Zapis mapy obejmuje zawartość obu rodzajów siatek. Duplikat skrzyni otrzymuje własne egzemplarze itemków.
 
-W Play / Runtime **I** otwiera ekwipunek, **E** otwiera najbliższą skrzynię lub rozmowę z NPC w zasięgu 2,5 jednostki. Przeciąganie przenosi przedmioty między skrzynią a EQ; **Shift+klik** przenosi je na pierwsze pasujące miejsce drugiej siatki. Brak miejsca zachowuje item w źródłowej siatce. Otwarte EQ zatrzymuje ruch. **I / Escape / X** zamyka panel, F5 wraca z podglądu do edycji. Zabranie itemków w podglądzie nie zmienia zawartości mapy w edytorze; Runtime przechowuje zmiany w bieżącej sesji.
+W Play / Runtime **I** otwiera ekwipunek, **E** otwiera najbliższą skrzynię lub rozmowę z NPC w zasięgu 2,5 jednostki. Przeciąganie przenosi przedmioty między skrzynią a EQ; **Shift+klik** przenosi je na pierwsze pasujące miejsce drugiej siatki. Brak miejsca zachowuje item w źródłowej siatce. Otwarte EQ zatrzymuje ruch. **I / Escape / X** zamyka panel, F5 wraca z podglądu do edycji. Zabranie itemków w podglądzie nie zmienia zawartości mapy w edytorze; F6 zapisuje stan gry w osobnym pliku postępu, a F9 go wczytuje.
 
 Starsze mapy wczytują się z pustym startowym EQ i bez skrzyń. Ta wersja nie zawiera skryptów ani systemu zadań.
 
@@ -117,6 +148,8 @@ dotnet run --project Editor -- --inventory-interaction-test
 dotnet run --project Editor -- --dialogue-link-interaction-test
 dotnet run --project Editor -- --dialogue-sequence-interaction-test
 dotnet run --project Editor -- --monster-interaction-test
+dotnet run --project Editor -- --launch-options-interaction-test
+dotnet run --project Editor -- --world-interaction-test
 ```
 
 Pierwszy test sprawdza dane i operacje edycji bez okna, w tym przedmioty, skrzynie, teren, wodę i mapy 2048 × 2048. Pozostałe wymagają sesji graficznej. Pełny test interakcji zapisuje `Editor/editor-smoke.png` i obejmuje także itemki. Wariant `--inventory-interaction-test` sprawdza tylko skrzynie, przypisywanie, przeciąganie, zajęte pola, cofanie, zapis, otwieranie E/I, Shift+klik, zatrzymanie ruchu i niezależność podglądu. Mapy oraz zrzuty okien testowych są w `Editor/obj/`.
@@ -126,3 +159,7 @@ Pierwszy test sprawdza dane i operacje edycji bez okna, w tym przedmioty, skrzyn
 `--dialogue-sequence-interaction-test` sprawdza oba rodzaje odpowiedzi, zachowanie istniejących opcji przy dodawaniu kwestii NPC, cofanie, zapis/wczytanie oraz kontynuację przez Enter i kliknięcie w podglądzie. Pełny test interakcji również go uruchamia; testy danych i układu sekwencji są częścią `--editor-test`.
 
 `--monster-interaction-test` sprawdza dodawanie, zaznaczanie, przeciąganie, nazwę, grafikę, wszystkie statystyki, cofanie, duplikowanie, usuwanie, zapis/wczytanie, małe okno, pościg, obrażenia, pauzę w panelach, Spację, śmierć i restart przez Enter. Pełny test interakcji także go uruchamia. Testy danych i logiki walki są częścią `--editor-test`.
+
+`--launch-options-interaction-test` sprawdza przełącznik rzutów, hamburger i modal, blokowanie skrótów w oknie, anulowanie, zatwierdzanie, cofanie, zapis/wczytanie, zaznaczanie i przeciąganie w izometrii, ruch i zoom w Play oraz minimalny rozmiar okna. Pełny test interakcji także go uruchamia. Zrzuty zapisuje w `Editor/obj/launch-options.png` i `Editor/obj/isometric-editor.png`.
+
+`--world-interaction-test` sprawdza zakładki World, ustawienia środowiska, światła i dźwięki, rysowanie obszarów i wielokątów, drzwi, zaznaczanie i duplikowanie grup, bibliotekę prefabrykatów, zapis mapy oraz F6/F9 w Play. Korzysta z osobnej biblioteki w `Editor/obj/` i zapisuje `Editor/obj/world-tools.png`. Pełny test interakcji uruchamia również te sprawdzenia i testy GPU światła, cieni, zanikania oraz cache terenu.

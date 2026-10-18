@@ -75,6 +75,7 @@ sealed class ChestData : SceneObject
 {
     public const string DefaultAsset = "objects/props/containers/chest.png";
     public string Name { get; set; } = "Skrzynia";
+    public bool Opened { get; set; }
     public InventoryGrid Contents { get; set; } = new() { Height = 6 };
     public ChestData() { Asset = DefaultAsset; Height = 1.4f; }
 }
@@ -110,7 +111,8 @@ sealed partial class MapDocument
     {
         if (!Map.Objects.Contains(item)) throw new ArgumentException("Select a scene object.");
         Checkpoint();
-        var chest = new ChestData { Id = item.Id, Asset = item.Asset, X = item.X, Z = item.Z, Height = item.Height, Solid = item.Solid };
+        var chest = new ChestData { Id = item.Id, Asset = item.Asset, X = item.X, Z = item.Z, Height = item.Height, Solid = item.Solid,
+            Collider = item.Collider == null ? null : ScenePrefab.Clone(item.Collider), IsDoor = item.IsDoor, DoorOpen = item.DoorOpen, FadeWhenBlocking = item.FadeWhenBlocking };
         Map.Objects.Remove(item); Map.Chests.Add(chest); return chest;
     }
     public ChestData DuplicateChest(ChestData source)

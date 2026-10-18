@@ -17,6 +17,10 @@ Wybierz grafikę po lewej i kliknij mapę, aby wstawić obiekt. Narzędzie **Sel
 
 **Save / Ctrl+S** zapisuje mapę do `Runtime/Maps/world.json`. **Play / F5** uruchamia jej bieżącą wersję wewnątrz edytora. F5 lub Escape wraca do edycji.
 
+**View: Perspective / Isometric** u góry po prawej przełącza dotychczasowy rzut perspektywiczny i kamerę izometryczną. Hamburger obok otwiera **Launch options** z wyborem rzutu, startowego zoomu, siatki w grze i limitu FPS. Opcje zapisują się z mapą i działają w Play oraz Runtime.
+
+**World** otwiera ustawienia oświetlenia, cieni, zanikania przeszkód, cyklu dnia i nocy, dźwięku przestrzennego, triggerów, prefabrykatów oraz kształtów kolizji. Shift+klik zaznacza grupy; prefabrykaty zapisują się w `Editor/prefabs/`. Triggery i wielokąty kolizji rysuje się bezpośrednio na mapie. W Play i Runtime **F6** zapisuje postęp, **F9** go przywraca. Teren korzysta z fragmentów siatki GPU 16 × 16 i przebudowuje je po zmianach wysokości. Szczegóły obsługi są w [instrukcji edytora](Editor/README.md).
+
 Osobna gra odczytuje ostatnio zapisaną mapę:
 
 ```sh
@@ -37,6 +41,8 @@ W drzewku możesz wybrać **+ Player Reply** (opcja bohatera) albo **+ NPC Reply
 
 **Sculpt / 6** podnosi, obniża, wygładza i wyrównuje powierzchnię w krokach 0,25 m. **Water / 7 → Fill basin** wypełnia kliknięte zagłębienie wodą do ustawionego poziomu. Najpierw wykop zbiornik narzędziem Sculpt; woda zachowuje dno i kończy się na brzegu wyznaczonym przez teren. **Drain basin** opróżnia zbiornik. Wysokości terenu i ustawienia wody zapisują się w mapie; obiekty oraz postacie opierają się na podłożu. Głęboka woda i strome zbocza zatrzymują ruch w grze.
 
+Tekstury podłoża automatycznie blendują się na granicach i w narożnikach kafelków, również na zboczach. Efekt obejmuje wbudowane materiały oraz własne PNG i działa w edytorze, Play i Runtime.
+
 Można pracować na innym pliku:
 
 ```sh
@@ -56,10 +62,13 @@ Szczegóły: [obsługa edytora](Editor/README.md), [gra testowa i kamera](Runtim
 dotnet build
 dotnet run --project Editor -- --editor-test
 dotnet run --project Runtime -- --camera-test
+dotnet run --project Runtime -- --world-test
+dotnet run --project Runtime -- --world-gpu-test
 dotnet run --project Runtime -- --dialogue-test
 dotnet run --project Runtime -- --inventory-test
 dotnet run --project Runtime -- --monster-test
 dotnet run --project Runtime -- --terrain-test
+dotnet run --project Runtime -- --terrain-blend-test
 dotnet run --project Editor -- --interaction-test
 ```
 

@@ -55,11 +55,12 @@ static class MapSizeChecks
         }
         finally { if (File.Exists(file)) File.Delete(file); if (File.Exists(file + ".tmp")) File.Delete(file + ".tmp"); }
         map = doc.Map;
+        foreach (var projection in Enum.GetValues<ViewProjection>())
         foreach (float zoom in new[] { -100f, 0f, 100f })
         foreach (var target in new[] { Vector3.Zero, new Vector3(1023, 0, 1023), new Vector3(-1023, 0, -1023) })
         foreach (var size in new[] { (608, 600), (1280, 800), (2560, 1080) })
         {
-            var camera = new FollowCamera(target); camera.Zoom(zoom); camera.Snap(target);
+            var camera = new FollowCamera(target, new() { Projection = projection }); camera.Zoom(zoom); camera.Snap(target);
             var bounds = TerrainVisibility.GetBounds(map, camera.View, size.Item1, size.Item2);
             Check(bounds.MinX >= 0 && bounds.MinZ >= 0 && bounds.MaxX <= map.Width && bounds.MaxZ <= map.Depth &&
                 bounds.TileCount > 0 && bounds.TileCount < 50_000, "terrain rendering is bounded by the viewport");
@@ -70,8 +71,10 @@ static class MapSizeChecks
             for (int x = -10; x <= 10; x++)
             for (int y = -10; y <= 10; y++)
             {
-                var direction = forward + right * (x / 10f * aspect * tangent) + up * (y / 10f * tangent);
-                var terrainHit = TerrainGeometry.Raycast(map, new Ray { Position = camera.View.Position, Direction = Vector3.Normalize(direction) });
+                bool orthographic = projection == ViewProjection.Isometric;
+                var origin = orthographic ? camera.View.Position + (right * (x / 10f * aspect) + up * (y / 10f)) * camera.View.FovY / 2 : camera.View.Position;
+                var direction = orthographic ? forward : forward + right * (x / 10f * aspect * tangent) + up * (y / 10f * tangent);
+                var terrainHit = TerrainGeometry.Raycast(map, new Ray { Position = origin, Direction = Vector3.Normalize(direction) });
                 if (!terrainHit.HasValue || !map.Contains(terrainHit.Value.X, terrainHit.Value.Z)) continue;
                 var hit = terrainHit.Value;
                 int tx = (int)MathF.Floor(hit.X + map.Width / 2f), tz = (int)MathF.Floor(hit.Z + map.Depth / 2f);

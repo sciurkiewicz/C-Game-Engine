@@ -20,14 +20,17 @@ Domyślnie wczytuje `Runtime/Maps/world.json`. Jeśli plik jeszcze nie istnieje,
 dotnet run --project Runtime -- --map Runtime/Maps/test.json
 ```
 
+Materiały podłoża płynnie blendują się na granicach kafelków oraz przy zbiegu czterech tekstur. Przejścia działają na zboczach i w obu rzutach kamery, również z własnymi PNG z `Editor/terrain/`. Malowanie i cofanie w edytorze od razu odświeżają efekt; format mapy pozostaje zgodny ze starszymi zapisami.
+
 ## Sterowanie
 
 - WASD lub strzałki — chodzenie.
 - Lewy Shift — bieganie.
 - Spacja — atak najbliższego Monstera w zasięgu; można przytrzymać.
 - Enter po śmierci — restart bieżącej mapy.
+- F6 — zapis postępu gry; F9 — wczytanie ostatniego zapisu dla mapy startowej.
 - Kółko myszy / + / - — płynny zoom.
-- R — domyślny zoom.
+- R — początkowy zoom zapisany w opcjach mapy (domyślnie odległość 30 m).
 - E — rozmowa z najbliższym NPC lub otwarcie najbliższej skrzyni w odległości do 2,5 jednostki.
 - I — otwarcie / zamknięcie ekwipunku.
 - W ekwipunku: przeciąganie — układanie lub przenoszenie itemków między siatkami; Shift+klik — przeniesienie do drugiej siatki na pierwsze wolne miejsce.
@@ -43,11 +46,13 @@ NPC może wypowiedzieć kilka kwestii po sobie. Kolejne kwestie przechodzą po j
 
 Punkt startowy, wygląd postaci, rozmiary obiektów i kolizje ustawia się w edytorze. Nie jest to jeszcze pełna gra RPG: nie ma mechanik przetrwania.
 
+Menu hamburgerowe **Launch options** w edytorze zapisuje w mapie rzut **Perspective** lub **Isometric**, początkową odległość kamery, widoczność siatki oraz limit FPS. Runtime korzysta z tych samych ustawień co podgląd Play. Perspektywa zachowuje dotychczasową kamerę; izometria używa projekcji ortograficznej, kierunku 45° i stałego nachylenia około 35,26°. Sterowanie podąża za kierunkiem wybranego widoku. Starsze mapy domyślnie korzystają z perspektywy, odległości 30 m, widocznej siatki i 60 FPS. Argumenty `--close` / `--far` nadal pozwalają nadpisać startowy zoom.
+
 ## Ekwipunek i skrzynie
 
 Ekwipunek bohatera ma 10×4 pola, a skrzynie 10×6. Pięć placeholderów zajmuje różne prostokąty: czerwona mikstura 1×1, niebieski sztylet 1×2, zielony miecz 1×3, żółta zbroja 2×2 i fioletowa tarcza 2×3. Item musi zmieścić się całym prostokątem na wolnych polach. Nieudane przeniesienie, zajęte miejsce i upuszczenie poza siatką pozostawiają go na poprzednim miejscu.
 
-Podejdź do skrzyni i naciśnij E. Jej zawartość jest po lewej, EQ bohatera po prawej. Przenoszenie działa w obie strony. Otwarte okno zatrzymuje ruch postaci. Zawartość skrzyń i startowe EQ ustawia się w edytorze. Zabrane lub odłożone przedmioty pozostają w bieżącej sesji; Runtime nie zapisuje postępu do mapy.
+Podejdź do skrzyni i naciśnij E. Jej zawartość jest po lewej, EQ bohatera po prawej. Przenoszenie działa w obie strony. Otwarte okno zatrzymuje ruch postaci. Zawartość skrzyń i startowe EQ ustawia się w edytorze. Zabrane lub odłożone przedmioty pozostają w bieżącej sesji; F6 zapisuje je w osobnym pliku postępu, a F9 go przywraca.
 
 ## Monstery i walka
 
@@ -64,8 +69,22 @@ W JSON tablica `Monsters` zawiera ustawienia i punkty startowe. Aktualne HP oraz
 - FOV: 35°.
 - Dystans: domyślnie 30, zakres 15–50, krok zoomu 4.
 - Pitch: od 30° przy zbliżeniu do 60° przy oddaleniu, domyślnie około 42,9°.
-- Stały heading: 90°, zgodnie z ostatnio wybranym widokiem; brak obracania Q/E.
+- Stały heading: 90° dla perspektywy, 45° dla izometrii; brak obracania Q/E.
 - Płynne podążanie za postacią i ruch względem kierunku kamery.
+
+## Świat, dźwięk i zapis postępu
+
+Ustawienia z **World** w edytorze działają również w Runtime. Obiekty zasłaniające gracza płynnie stają się przezroczyste. Oświetlenie obejmuje podłoże, grafiki i wodę; dostępne są kolorowe światła punktowe, miękkie cienie pod obiektami oraz opcjonalny cykl dnia i nocy. Ogniska i pochodnie automatycznie emitują światło. Na klatkę wybieranych jest do 16 najbliższych świateł.
+
+Dźwięki cichną z odległością, a panorama stereo odpowiada kierunkowi kamery. Ogniska, pochodnie i pobliska woda mają automatyczny ambient; kroki zależą od materiału podłoża. Dostarczone dźwięki są generowanymi placeholderami. Własne WAV/OGG/MP3 umieść w `Editor/audio/` i przypisz do emiterów w **World → Sounds**. Głośność i wyciszenie ustawia **World → Environment**. Brak dostępnego urządzenia audio nie blokuje gry.
+
+Wejście w obszar triggera może wyświetlić wiadomość, rozpocząć rozmowę, otworzyć/zamknąć drzwi, stworzyć potwora, teleportować gracza lub wczytać mapę z `Runtime/Maps/`. Akcja uruchamia się przy wejściu; **Once** ogranicza ją do jednego wykonania. Przejścia przenoszą HP i ekwipunek oraz zachowują stan odwiedzonych światów, do 32 map w zapisie. Rozmowa i otwarty ekwipunek zatrzymują triggery, czas świata oraz walkę.
+
+**F6** atomowo zapisuje postęp w `Runtime/Saves/`, **F9** go przywraca. Zapis obejmuje pozycję i HP gracza, EQ, zawartość i stan otwarcia skrzyń, drzwi, pokonane potwory i pozostałe HP, wykonane triggery oraz porę dnia na odwiedzonych mapach. Plik jest przypisany do ścieżki mapy startowej; błędny zapis nie zastępuje bieżącej sesji. Podgląd edytora ma osobne pliki w `Editor/obj/progress/`. Mapy źródłowe JSON pozostają plikami projektu. Enter po śmierci odtwarza stan początkowy bieżącej mapy.
+
+Kolizje mogą być okręgami, obracanymi prostokątami i wklęsłymi wielokątami. Sprawdzany jest cały odcinek ruchu, co zatrzymuje postacie przed cienkimi ścianami. Te same kształty są używane podczas wyznaczania tras i sprawdzania ciosów. Otwarte drzwi nie blokują ruchu.
+
+Podłoże korzysta z buforowanych siatek GPU po 16 × 16 kafelków. Malowanie zmienia wyłącznie dane materiałów; zmiana wysokości przebudowuje dotknięte fragmenty i sąsiadów współdzielących wierzchołki. Cache usuwa nieużywane fragmenty podczas przemieszczania się po dużych mapach.
 
 ## Dane
 
@@ -79,12 +98,15 @@ Brakująca grafika obiektu jest zastępowana różowym prostokątem, a brakując
 
 ```sh
 dotnet run --project Runtime -- --camera-test
+dotnet run --project Runtime -- --world-test
+dotnet run --project Runtime -- --world-gpu-test
 dotnet run --project Runtime -- --billboard-test
 dotnet run --project Runtime -- --dialogue-test
 dotnet run --project Runtime -- --inventory-test
 dotnet run --project Runtime -- --monster-test
 dotnet run --project Runtime -- --map-test
 dotnet run --project Runtime -- --terrain-test
+dotnet run --project Runtime -- --terrain-blend-test
 dotnet run --project Runtime -- --sprite-water-test
 dotnet run --project Runtime -- --smoke-test
 ```
@@ -93,6 +115,10 @@ Testy kamery, dialogów, map i terenu działają bez okna. Test dialogów sprawd
 
 `--sprite-water-test` wymaga sesji graficznej i porównuje piksele renderowane przez GPU przy różnych przybliżeniach: wodę pod przezroczystym tłem i otworami grafiki, widoczną część obiektu oraz zanurzenie. Zapisuje podgląd drzewa nad wodą w `Editor/obj/sprite-water.png`. Ten sam test uruchamia się w teście interakcji edytora.
 
+`--terrain-blend-test` porównuje piksele GPU na środkach, granicach i narożnikach materiałów, sprawdza własne tekstury, malowanie/cofanie, powtarzanie bez przenikania atlasu, kilka partii renderowania, zmianę widocznego obszaru mapy 2048 × 2048, starsze pola water oraz oba rzuty na zboczach. Wymaga sesji graficznej. Zapisuje `Editor/obj/terrain-blend-perspective.png` oraz `Editor/obj/terrain-blend-isometric.png`. Pełny test interakcji edytora również go uruchamia.
+
 `--inventory-test` działa bez okna i sprawdza rozmiary itemków, kolizje w siatce, przenoszenie bez utraty przedmiotów, pełne EQ, zasięg skrzyni, duplikowanie, zapis/wczytanie, cofanie oraz niezależność podglądu. `--inventory-smoke-test --map ścieżka.json` pokazuje EQ i pierwszą skrzynię z mapy (musi być w zasięgu punktu startowego); bez skrzyń pokazuje samo EQ. Kończy się po 15 klatkach i zapisuje `Editor/obj/inventory-runtime.png`.
 
 `--monster-test` działa bez okna i sprawdza dane, walidację, zgodność starszych map, edycję, pościg, powrót, omijanie skały, wodę i zbocza, zasięg i przerwy ataków, obrażenia, śmierć, restart oraz pauzę w dialogach i EQ. `--monster-smoke-test --map ścieżka.json` uruchamia krótki podgląd i zapisuje `Editor/obj/monster-runtime.png`.
+
+`--world-test` sprawdza dane i zgodność starszych map, kolizje i cienkie ściany, triggery, zapis/wczytanie i przejścia między mapami, niezależność Play, prefabrykaty, cofanie, wersje fragmentów terenu oraz panoramę i generowanie dźwięków. `--world-gpu-test` wymaga sesji graficznej i porównuje piksele oświetlenia, cieni oraz zanikania w obu rzutach; sprawdza ponowne użycie siatek GPU, częściową przebudowę, usuwanie starych fragmentów oraz dekodowanie dźwięków.

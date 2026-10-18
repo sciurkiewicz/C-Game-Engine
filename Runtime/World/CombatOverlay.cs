@@ -32,6 +32,13 @@ sealed class CombatOverlay
         DrawRectangle(x + 10, y + 29, 174, 7, new(55, 63, 74, 255));
         DrawRectangle(x + 10, y + 29, (int)(174f * play.PlayerHealth / PlaySession.PlayerMaxHealth), 7, Red);
         UiText.Draw("Spacja: atak", x + 10, y + 42, 12, play.PlayerAttackFlash > 0 ? Color.White : new(150, 170, 186, 255));
+        UiText.Draw("F6: zapisz postęp / F9: wczytaj", (int)bounds.X + 14, (int)(bounds.Y + bounds.Height) - 24, 13, Text);
+        if (play.Notice.Length > 0)
+        {
+            int w = Math.Min((int)bounds.Width - 28, 620), nx = (int)(bounds.X + (bounds.Width - w) / 2), ny = (int)bounds.Y + 12;
+            DrawRectangle(nx, ny, w, 42, Panel);
+            UiText.Draw(play.Notice.Length > 90 ? play.Notice[..87] + "..." : play.Notice, nx + 12, ny + 13, 14, Text);
+        }
         if (!play.PlayerAlive)
         {
             DrawRectangleRec(bounds, new Color(0, 0, 0, 125));

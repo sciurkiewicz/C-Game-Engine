@@ -1,19 +1,25 @@
 using System.Numerics;
 using Raylib_cs;
 
-// Perspective 2.5D view with a fixed heading and zoom-dependent pitch.
+// The original perspective view and a true orthographic isometric view share follow/zoom controls.
 sealed class FollowCamera
 {
     public const float MinDistance = 15, MaxDistance = 50, DefaultDistance = 30;
     public const float DefaultYaw = MathF.PI / 2;
+    public const float IsometricYaw = MathF.PI / 4;
+    public static readonly float IsometricPitch = MathF.Atan(1 / MathF.Sqrt(2)) * 180 / MathF.PI;
     const float ZoomStep = 4;
     readonly Vector3 targetOffset = new(0, 1.5f, 0);
     Vector3 focus;
+    float initialDistance = DefaultDistance;
+    public ViewProjection Projection { get; set; }
     public float Distance { get; private set; } = DefaultDistance;
     public float TargetDistance { get; private set; } = DefaultDistance;
-    public float PitchDegrees => 30 + 30 * (Distance - MinDistance) / (MaxDistance - MinDistance);
-    public Vector3 Right => new(MathF.Cos(DefaultYaw), 0, -MathF.Sin(DefaultYaw));
-    public Vector3 Backward => new(MathF.Sin(DefaultYaw), 0, MathF.Cos(DefaultYaw));
+    public float PitchDegrees => Projection == ViewProjection.Isometric ? IsometricPitch :
+        30 + 30 * (Distance - MinDistance) / (MaxDistance - MinDistance);
+    float Yaw => Projection == ViewProjection.Isometric ? IsometricYaw : DefaultYaw;
+    public Vector3 Right => new(MathF.Cos(Yaw), 0, -MathF.Sin(Yaw));
+    public Vector3 Backward => new(MathF.Sin(Yaw), 0, MathF.Cos(Yaw));
     public Camera3D View
     {
         get
@@ -25,14 +31,25 @@ sealed class FollowCamera
                 Target = focus,
                 Position = focus + Distance * (horizontal * MathF.Cos(pitch) + Vector3.UnitY * MathF.Sin(pitch)),
                 Up = Vector3.UnitY,
-                FovY = 35,
-                Projection = CameraProjection.Perspective
+                // Orthographic FovY is a world-space height. Match the perspective scale at the target.
+                FovY = Projection == ViewProjection.Isometric ? 2 * Distance * MathF.Tan(35 * MathF.PI / 360) : 35,
+                Projection = Projection == ViewProjection.Isometric ? CameraProjection.Orthographic : CameraProjection.Perspective
             };
         }
     }
-    public FollowCamera(Vector3 target) => Snap(target);
+    public FollowCamera(Vector3 target, RuntimeSettings? settings = null)
+    {
+        if (settings != null) ApplySettings(settings);
+        Snap(target);
+    }
+    public void ApplySettings(RuntimeSettings settings)
+    {
+        settings.Validate();
+        Projection = settings.Projection;
+        initialDistance = TargetDistance = settings.InitialDistance;
+    }
     public void Zoom(float steps) => TargetDistance = Math.Clamp(TargetDistance - steps * ZoomStep, MinDistance, MaxDistance);
-    public void Reset() => TargetDistance = DefaultDistance;
+    public void Reset() => TargetDistance = initialDistance;
     public void Snap(Vector3 target)
     {
         focus = target + targetOffset;

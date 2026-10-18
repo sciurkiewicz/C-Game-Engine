@@ -4,6 +4,14 @@ using static Raylib_cs.Raylib;
 
 sealed partial class WorldRenderer
 {
+    void DrawTerrain(MapData map, TerrainBounds bounds, Vector3 focus, float hour)
+    {
+        if (bounds.TileCount == 0) return;
+        var blending = assets.TerrainBlending;
+        blending.Update(assets.Terrain, map, bounds);
+        WorldLighting.Apply(blending.Shader, map, hour, focus);
+        assets.TerrainMeshes.Draw(map, bounds, blending);
+    }
     public void DrawBrush(MapData map, Vector3 center, float radius, Color color, bool square, float? level = null)
     {
         const int segments = 64;
@@ -27,20 +35,15 @@ sealed partial class WorldRenderer
         for (int i = 0; i < segments; i++) DrawLine3D(Point(i), Point(i + 1), color);
     }
     static readonly Vector3 Sun = Vector3.Normalize(new Vector3(-.35f, 1, -.45f));
-    static void TerrainTriangle(Vector3 a, Vector3 b, Vector3 c, Vector2 uvA, Vector2 uvB, Vector2 uvC)
-    {
-        var normal = Vector3.Normalize(Vector3.Cross(b - a, c - a));
-        byte shade = (byte)Math.Clamp((.6f + .45f * Math.Max(0, Vector3.Dot(normal, Sun))) * 255, 0, 255);
-        Rlgl.Color4ub(shade, shade, shade, 255); Rlgl.Normal3f(normal.X, normal.Y, normal.Z);
-        Vertex(a, uvA.X, uvA.Y); Vertex(b, uvB.X, uvB.Y); Vertex(c, uvC.X, uvC.Y);
-    }
-    static void DrawWater(MapData map, Camera3D camera, TerrainBounds bounds, float time)
+    static void DrawWater(MapData map, Camera3D camera, TerrainBounds bounds, float time, float hour)
     {
         var forward = Vector3.Normalize(camera.Target - camera.Position);
         var cells = bounds.Indices(map.Width).Where(i => map.WaterMask(i) != 0)
             .OrderByDescending(i => Vector3.Dot(new Vector3(i % map.Width - map.Width / 2f + .5f, map.WaterLevel,
                 i / map.Width - map.Depth / 2f + .5f) - camera.Position, forward)).ToArray();
         if (cells.Length == 0) return;
+        var ambient = map.Environment.Lighting ? WorldLighting.Ambient(hour) : Vector3.One;
+        var lights = WorldLighting.Nearby(map, camera.Target);
         Rlgl.DrawRenderBatchActive(); Rlgl.DisableDepthMask(); Rlgl.DisableBackfaceCulling();
         Rlgl.SetTexture(0); Rlgl.Begin((int)DrawMode.Triangles);
         foreach (int cell in cells)
@@ -55,7 +58,8 @@ sealed partial class WorldRenderer
             byte r = (byte)Math.Clamp(25 + light * 26 + glint * 145 - depth * 12, 0, 255);
             byte g = (byte)Math.Clamp(95 + light * 48 + glint * 120 - depth * 32, 0, 255);
             byte b = (byte)Math.Clamp(135 + light * 52 + glint * 90 - depth * 28, 0, 255);
-            Rlgl.Color4ub(r, g, b, (byte)(175 + depth * 45));
+            var illumination = WorldLighting.Evaluate(map, (triangle.A + triangle.B + triangle.C) / 3, ambient, lights);
+            Rlgl.Color4ub((byte)Math.Clamp(r * illumination.X, 0, 255), (byte)Math.Clamp(g * illumination.Y, 0, 255), (byte)Math.Clamp(b * illumination.Z, 0, 255), (byte)(175 + depth * 45));
             Rlgl.Normal3f(normal.X, normal.Y, normal.Z);
             Rlgl.Vertex3f(triangle.A.X, triangle.A.Y, triangle.A.Z);
             Rlgl.Vertex3f(triangle.B.X, triangle.B.Y, triangle.B.Z);

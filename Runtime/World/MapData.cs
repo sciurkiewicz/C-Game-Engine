@@ -28,6 +28,10 @@ class SceneObject
     public float Z { get; set; }
     public float Height { get; set; } = 2;
     public bool Solid { get; set; } = true;
+    public ColliderData? Collider { get; set; }
+    public bool IsDoor { get; set; }
+    public bool DoorOpen { get; set; }
+    public bool FadeWhenBlocking { get; set; } = true;
     [JsonIgnore] public Vector3 Position => new(X, 0, Z);
 }
 
@@ -51,6 +55,7 @@ sealed partial class MapData
     public List<SceneObject> Objects { get; set; } = [];
     public List<NpcData> Npcs { get; set; } = [];
     public PlayerStart Player { get; set; } = new();
+    public RuntimeSettings Runtime { get; set; } = new();
     static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true };
     static readonly JsonSerializerOptions MetadataOptions = new()
     {
@@ -98,6 +103,8 @@ sealed partial class MapData
             throw new InvalidDataException("Invalid map dimensions, version or terrain.");
         ValidateTerrain();
         ValidateWater();
+        if (Runtime == null) throw new InvalidDataException("Missing runtime settings.");
+        Runtime.Validate();
         if (Player == null || !Contains(Player.X, Player.Z) || !ValidHeight(Player.Height) ||
             (Player.Asset != null && !ProjectPaths.ValidAssetId(Player.Asset)))
             throw new InvalidDataException("Invalid player start.");
@@ -113,6 +120,7 @@ sealed partial class MapData
         foreach (var npc in Npcs) npc.Dialogue.Validate();
         ValidateMonsters();
         ValidateInventory();
+        ValidateWorldFeatures();
     }
     static bool ValidHeight(float h) => float.IsFinite(h) && h >= .25f && h <= 12;
     public static MapData CreateEmpty(int width = 48, int depth = 48)

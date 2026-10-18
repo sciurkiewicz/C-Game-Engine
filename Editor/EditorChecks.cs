@@ -10,6 +10,8 @@ static class EditorChecks
         MonsterChecks.Run();
         TerrainChecks.Run();
         MapSizeChecks.Run();
+        RuntimeSettingsChecks.Run();
+        WorldFeatureChecks.Run();
         var sizes = new MapDocument(new MapData(), true);
         sizes.New(20, 12);
         Check(sizes.Map.Width == 20 && sizes.Map.Depth == 12 && sizes.Map.Tiles.Length == 240 && sizes.Map.Tiles.All(t => t == "grass"), "rectangular new map");

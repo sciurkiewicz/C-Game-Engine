@@ -44,7 +44,40 @@ static class CameraChecks
 
             Check(Math.Abs(Vector3.Dot(camera.Right, camera.Backward)) < .001f, "movement axes stay orthogonal");
         }
-        Console.WriteLine("Camera checks passed: follow, zoom limits/pitch, smoothing and fixed heading at 30/60/144 FPS.");
+        foreach (int fps in new[] { 30, 60, 144 })
+        {
+            var iso = new FollowCamera(Vector3.Zero, new() { Projection = ViewProjection.Isometric });
+            Check(iso.View.Projection == CameraProjection.Orthographic, "isometric view uses parallel projection");
+            var forward = Vector3.Normalize(iso.View.Target - iso.View.Position);
+            var screenUp = Vector3.Cross(iso.Right, forward);
+            float ProjectedLength(Vector3 axis) => new Vector2(Vector3.Dot(axis, iso.Right), Vector3.Dot(axis, screenUp)).Length();
+            Check(Math.Abs(ProjectedLength(Vector3.UnitX) - ProjectedLength(Vector3.UnitZ)) < .001f &&
+                Math.Abs(ProjectedLength(Vector3.UnitX) - ProjectedLength(Vector3.UnitY)) < .001f,
+                "true isometry foreshortens all three world axes equally");
+            iso.Zoom(100);
+            for (int i = 0; i < fps * 10; i++) iso.Update(new(3, 2, 4), 1f / fps);
+            float closeHeight = iso.View.FovY;
+            Check(Math.Abs(iso.Distance - 15) < .02f && Vector3.Distance(iso.View.Target, new(3, 3.5f, 4)) < .01f,
+                "isometric camera follows elevated ground and clamps close zoom");
+            iso.Zoom(-100);
+            for (int i = 0; i < fps * 10; i++)
+            {
+                iso.Update(Vector3.Zero, 1f / fps);
+                Check(Math.Abs(iso.PitchDegrees - FollowCamera.IsometricPitch) < .001f, "isometric zoom keeps a fixed pitch");
+                var offset = iso.View.Position - iso.View.Target;
+                Check(Math.Abs(offset.X - offset.Z) < .001f, "isometric heading stays diagonal");
+            }
+            Check(Math.Abs(iso.Distance - 50) < .02f && iso.View.FovY > closeHeight * 3,
+                "orthographic zoom changes the visible world height");
+            var screenRight = Vector3.Normalize(Vector3.Cross(iso.View.Target - iso.View.Position, Vector3.UnitY));
+            Check(Vector3.Distance(screenRight, iso.Right) < .001f && Math.Abs(Vector3.Dot(iso.Right, iso.Backward)) < .001f,
+                "isometric movement axes follow screen directions");
+            iso.Projection = ViewProjection.Perspective;
+            Check(iso.View.Projection == CameraProjection.Perspective && Math.Abs(iso.View.FovY - 35) < .001f,
+                "switching back restores the original perspective");
+        }
+        RuntimeSettingsChecks.Run();
+        Console.WriteLine("Camera checks passed: perspective/isometric, follow, zoom, smoothing and movement axes at 30/60/144 FPS.");
     }
     static void Check(bool condition, string description)
     {

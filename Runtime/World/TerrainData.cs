@@ -13,6 +13,8 @@ sealed partial class MapData
         get => heights;
         set
         {
+            terrainGeneration++;
+            terrainChunkVersions.Clear();
             heights = value;
             if (heights != null)
                 for (int i = 0; i < heights.Length; i++)
@@ -44,9 +46,10 @@ sealed partial class MapData
     public void SetVertexHeight(int x, int z, float value)
     {
         if (!float.IsFinite(value)) throw new ArgumentOutOfRangeException(nameof(value));
-        if (Heights.Length == 0) Heights = new float[VertexCount];
+        if (Heights.Length == 0) heights = new float[VertexCount];
         value = SnapElevation(Math.Clamp(value, MinElevation, MaxElevation));
         Heights[z * (Width + 1) + x] = value;
+        TouchTerrainVertex(x, z);
         minimumHeight = Math.Min(minimumHeight, value); maximumHeight = Math.Max(maximumHeight, value);
     }
     public static float SnapElevation(float value) => MathF.Round(value / ElevationStep, MidpointRounding.AwayFromZero) * ElevationStep;
