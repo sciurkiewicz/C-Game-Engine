@@ -39,12 +39,25 @@ sealed class WorldAssets : IDisposable
         if (!IsShaderValid(SpriteShader) || SpriteShader.Id == Rlgl.GetShaderIdDefault())
             throw new InvalidOperationException("Cannot load sprite transparency shader.");
         UiText.Load();
+        // Keep existing map material IDs while loading their editable PNG files first.
+        var defaultTerrain = new Dictionary<string, string>
+        {
+            ["terrain/grass.png"] = "grass", ["terrain/dirt.png"] = "dirt",
+            ["terrain/sand.png"] = "sand", ["terrain/stone.png"] = "stone",
+            ["terrain/water.png"] = "water"
+        };
         foreach (var directory in new[] { "objects", "characters", "terrain" })
         {
             string root = Path.Combine(ProjectPaths.AssetRoot, directory);
             if (!Directory.Exists(root)) continue;
-            foreach (var path in Directory.EnumerateFiles(root, "*", SearchOption.AllDirectories)
-                .Where(p => Path.GetExtension(p).Equals(".png", StringComparison.OrdinalIgnoreCase)).Order())
+            IEnumerable<string> paths = Directory.EnumerateFiles(root, "*", SearchOption.AllDirectories)
+                .Where(p => Path.GetExtension(p).Equals(".png", StringComparison.OrdinalIgnoreCase)).Order();
+            if (directory == "terrain")
+            {
+                var defaults = defaultTerrain.Keys.Select(id => Path.Combine(ProjectPaths.AssetRoot, id.Replace('/', Path.DirectorySeparatorChar)));
+                paths = defaults.Concat(paths.Except(defaults));
+            }
+            foreach (var path in paths)
             {
                 var img = LoadImage(path);
                 if (img.Width <= 0 || img.Height <= 0) { Warnings.Add(Path.GetFileName(path)); continue; }
@@ -59,31 +72,13 @@ sealed class WorldAssets : IDisposable
                 if (!IsTextureValid(texture)) { Warnings.Add(Path.GetFileName(path)); continue; }
                 SetTextureFilter(texture, TextureFilter.Bilinear);
                 string id = Path.GetRelativePath(ProjectPaths.AssetRoot, path).Replace('\\', '/');
-                if (directory == "terrain") Terrain.Add(id, texture);
+                if (directory == "terrain") Terrain.Add(defaultTerrain.GetValueOrDefault(id, id), texture);
                 else Sprites.Add(id, new(id, texture));
             }
         }
-        // Small repeatable bitmap materials until ground textures are supplied.
-        var colors = new Dictionary<string, Color>
-        {
-            ["grass"] = new(87, 108, 72, 255), ["dirt"] = new(139, 112, 78, 255),
-            ["sand"] = new(190, 175, 123, 255), ["stone"] = new(108, 119, 129, 255),
-            ["water"] = new(58, 108, 138, 255)
-        };
-        foreach (var (name, color) in colors)
-        {
-            var img = GenImageColor(64, 64, color);
-            var random = new Random(42);
-            for (int y = 0; y < 64; y++)
-                for (int x = 0; x < 64; x++)
-                {
-                    int noise = random.Next(-12, 13);
-                    if (name == "water") noise += (int)(MathF.Sin(y * .6f + x * .15f) * 6);
-                    ImageDrawPixel(ref img, x, y, new Color(color.R + noise, color.G + noise, color.B + noise, 255));
-                }
-            Terrain[name] = LoadTextureFromImage(img);
-            UnloadImage(img);
-        }
+        foreach (var (id, name) in defaultTerrain)
+            if (!Terrain.ContainsKey(name))
+                throw new InvalidDataException("Cannot load required terrain texture: " + id);
     }
     public void Dispose()
     {

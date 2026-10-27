@@ -52,7 +52,7 @@ dotnet run --project Runtime -- --map Runtime/Maps/test.json
 
 ## Materiały
 
-Dostarczone 38 grafik jest w `Editor/objects/`. Postać jest tymczasowo niebieskim znacznikiem, a podłoże korzysta z prostych tekstur generowanych w kodzie. Własne grafiki postaci umieść w `Editor/characters/`, a tekstury podłoża w `Editor/terrain/` — aplikacje wczytują PNG przy starcie.
+Dostarczone 38 grafik jest w `Editor/objects/`. Postać jest tymczasowo niebieskim znacznikiem, a podłoże korzysta z edytowalnych plików PNG w `Editor/terrain/` (`grass.png`, `dirt.png`, `sand.png`, `stone.png`). Własne grafiki postaci umieść w `Editor/characters/`, a tekstury podłoża w `Editor/terrain/` — aplikacje wczytują PNG przy starcie. Po edycji tekstury uruchom ponownie edytor lub Runtime; istniejące mapy od razu skorzystają ze zmienionych plików.
 
 Szczegóły: [obsługa edytora](Editor/README.md), [gra testowa i kamera](Runtime/README.md).
 
