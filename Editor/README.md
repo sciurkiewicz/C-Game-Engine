@@ -93,6 +93,25 @@ Dodatkowe materiały są osobnymi plikami, dostępnymi w **Ground** po ponownym 
 | [cobblestone.png](terrain/cobblestone.png) | Kamienny bruk do ścieżek i zabudowań. |
 | [sand_wet.png](terrain/sand_wet.png) | Ciemniejszy, mokry piasek do brzegów wody. |
 | [snow.png](terrain/snow.png) | Jasny śnieg z delikatnymi chłodnymi zagłębieniami. |
+| [wood_planks.png](terrain/wood_planks.png) | Zużyte dębowe deski do wnętrz i drewnianych pomostów. |
+| [stone_tiles.png](terrain/stone_tiles.png) | Kamienne płyty do dziedzińców i lochów. |
+| [brick_paving.png](terrain/brick_paving.png) | Ceglany bruk do ścieżek i placów. |
+| [autumn_leaves.png](terrain/autumn_leaves.png) | Jesienna ściółka z opadłymi liśćmi w odcieniach ochry i brązu. |
+| [cracked_earth.png](terrain/cracked_earth.png) | Sucha, spękana ziemia do wyschniętych koryt i dróg. |
+
+Prompty pierwszego zestawu pięciu PNG 1254 × 1254 w malowanym stylu zapisano w [terrain/GENERATION.md](terrain/GENERATION.md).
+
+Warianty w stylu **Don’t Starve** mają końcówkę `_ink`: poszarpane kontury tuszem, kreskowanie i przygaszone kolory. Są osobnymi materiałami w **Ground** po ponownym uruchomieniu edytora.
+
+| Plik | Materiał |
+| --- | --- |
+| [wood_planks_ink.png](terrain/wood_planks_ink.png) | Krzywe, sękate deski z konturami i kreskowaniem. |
+| [stone_tiles_ink.png](terrain/stone_tiles_ink.png) | Ponure płyty kamienne z rysowanymi pęknięciami. |
+| [brick_paving_ink.png](terrain/brick_paving_ink.png) | Ceglany bruk z nieregularną kreską tuszu. |
+| [autumn_leaves_ink.png](terrain/autumn_leaves_ink.png) | Jesienna ściółka z ostrymi konturami liści. |
+| [cracked_earth_ink.png](terrain/cracked_earth_ink.png) | Sucha ziemia z poszarpanymi szczelinami i kreskowaniem. |
+
+Każdy wariant ma 1254 × 1254 px. Prompty i obrazy wejściowe opisano w [terrain/GENERATION_INK.md](terrain/GENERATION_INK.md).
 
 Podłoże korzysta z kolorów PNG bez dodatkowej korekcji nasycenia, jasności ani barwy. Na mapie wygląd zmieniają blendowanie sąsiednich materiałów, cieniowanie zboczy oraz ustawienia **World → Environment** i światła. Aby porównać kolory z plikiem, wyłącz **Lighting** i **Shadows** oraz sprawdź płaski fragment jednego materiału. Zmiana PNG wymaga ponownego uruchomienia aplikacji, ale nie rekompilacji.
 
