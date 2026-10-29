@@ -74,7 +74,7 @@ W JSON tablica `Monsters` zawiera ustawienia i punkty startowe. Aktualne HP oraz
 
 ## Świat, dźwięk i zapis postępu
 
-Ustawienia z **World** w edytorze działają również w Runtime. Obiekty zasłaniające gracza płynnie stają się przezroczyste. Oświetlenie obejmuje podłoże, grafiki i wodę; dostępne są kolorowe światła punktowe, miękkie cienie pod obiektami oraz opcjonalny cykl dnia i nocy. Ogniska i pochodnie automatycznie emitują światło. Na klatkę wybieranych jest do 16 najbliższych świateł.
+Ustawienia z **World** w edytorze działają również w Runtime. Obiekty zasłaniające gracza płynnie stają się przezroczyste. Oświetlenie obejmuje podłoże, grafiki i wodę; dostępne są kolorowe światła punktowe, miękkie cienie pod obiektami oraz opcjonalny cykl dnia i nocy. Cienie skalują się do szerokości i wysokości wyświetlanej grafiki, dopasowują do nierówności terenu i działają również dla postaci. Włącza je **World → Environment → Contact shadows**. Ogniska i pochodnie automatycznie emitują światło. Na klatkę wybieranych jest do 16 najbliższych świateł.
 
 Dźwięki cichną z odległością, a panorama stereo odpowiada kierunkowi kamery. Ogniska, pochodnie i pobliska woda mają automatyczny ambient; kroki zależą od materiału podłoża. Dostarczone dźwięki są generowanymi placeholderami. Własne WAV/OGG/MP3 umieść w `Editor/audio/` i przypisz do emiterów w **World → Sounds**. Głośność i wyciszenie ustawia **World → Environment**. Brak dostępnego urządzenia audio nie blokuje gry.
 

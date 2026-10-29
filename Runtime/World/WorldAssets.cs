@@ -2,11 +2,14 @@ using System.Numerics;
 using Raylib_cs;
 using static Raylib_cs.Raylib;
 
-sealed record SpriteAsset(string Id, Texture2D Texture)
+sealed record SpriteAsset(string Id, Texture2D Texture, int PixelWidth = 0, int PixelHeight = 0)
 {
+    public const float PixelsPerUnit = 128;
+    public int SourceWidth => PixelWidth > 0 ? PixelWidth : Texture.Width;
+    public int SourceHeight => PixelHeight > 0 ? PixelHeight : Texture.Height;
     public string Name => Path.GetFileNameWithoutExtension(Id).Replace('_', ' ');
     public string Category => Id.StartsWith("objects/") ? Id.Split('/')[1] : "characters";
-    public float DefaultHeight => Id.Contains("/trees/") ? 5 : Id.Contains("/grass/") ? .9f : Id.Contains("/monuments/") ? 3 : 1.8f;
+    public float DefaultHeight => SourceHeight / PixelsPerUnit;
     public bool DefaultSolid => !Id.Contains("/grass/") && !Id.Contains("/effects/");
 }
 
@@ -16,6 +19,7 @@ sealed class WorldAssets : IDisposable
     public Dictionary<string, Texture2D> Terrain { get; } = [];
     public List<string> Warnings { get; } = [];
     public Shader SpriteShader { get; }
+    public Shader ShadowShader { get; }
     TerrainBlending? terrainBlending;
     public TerrainBlending TerrainBlending => terrainBlending ??= new();
     TerrainChunkCache? terrainMeshes;
@@ -38,6 +42,9 @@ sealed class WorldAssets : IDisposable
             """);
         if (!IsShaderValid(SpriteShader) || SpriteShader.Id == Rlgl.GetShaderIdDefault())
             throw new InvalidOperationException("Cannot load sprite transparency shader.");
+        ShadowShader = LoadShaderFromMemory(WorldLighting.VertexShader, WorldShadows.FragmentShader);
+        if (!IsShaderValid(ShadowShader) || ShadowShader.Id == Rlgl.GetShaderIdDefault())
+            throw new InvalidOperationException("Cannot load contact shadow shader.");
         UiText.Load();
         // Keep existing map material IDs while loading their editable PNG files first.
         var defaultTerrain = new Dictionary<string, string>
@@ -62,9 +69,12 @@ sealed class WorldAssets : IDisposable
                 var img = LoadImage(path);
                 if (img.Width <= 0 || img.Height <= 0) { Warnings.Add(Path.GetFileName(path)); continue; }
                 if (directory != "terrain") ImageAlphaCrop(ref img, .02f);
-                if (Math.Max(img.Width, img.Height) > 768)
+                // Cropping removes empty space; GPU downsampling must preserve the original pixel scale.
+                int pixelWidth = img.Width, pixelHeight = img.Height;
+                int maxTextureSize = directory == "terrain" ? 1536 : 768;
+                if (Math.Max(img.Width, img.Height) > maxTextureSize)
                 {
-                    float scale = 768f / Math.Max(img.Width, img.Height);
+                    float scale = (float)maxTextureSize / Math.Max(img.Width, img.Height);
                     ImageResize(ref img, Math.Max(1, (int)(img.Width * scale)), Math.Max(1, (int)(img.Height * scale)));
                 }
                 var texture = LoadTextureFromImage(img);
@@ -73,7 +83,7 @@ sealed class WorldAssets : IDisposable
                 SetTextureFilter(texture, TextureFilter.Bilinear);
                 string id = Path.GetRelativePath(ProjectPaths.AssetRoot, path).Replace('\\', '/');
                 if (directory == "terrain") Terrain.Add(defaultTerrain.GetValueOrDefault(id, id), texture);
-                else Sprites.Add(id, new(id, texture));
+                else Sprites.Add(id, new(id, texture, pixelWidth, pixelHeight));
             }
         }
         foreach (var (id, name) in defaultTerrain)
@@ -85,6 +95,7 @@ sealed class WorldAssets : IDisposable
         UiText.Unload();
         terrainBlending?.Dispose();
         terrainMeshes?.Dispose();
+        UnloadShader(ShadowShader);
         UnloadShader(SpriteShader);
         foreach (var sprite in Sprites.Values) UnloadTexture(sprite.Texture);
         foreach (var texture in Terrain.Values) UnloadTexture(texture);
@@ -105,15 +116,17 @@ sealed partial class WorldRenderer(WorldAssets assets)
         var bounds = TerrainVisibility.GetBounds(map, camera, viewWidth > 0 ? viewWidth : GetScreenWidth(), viewHeight > 0 ? viewHeight : GetScreenHeight());
         DrawTerrain(map, bounds, camera.Target, hour);
         Vector3 player = playerPosition ?? map.GroundPosition(map.Player.X, map.Player.Z);
-        DrawShadows(map, player, hour, bounds);
+        DrawShadows(map, camera, player, hour, bounds);
         if (grid)
         {
-            for (int x = bounds.MinX; x <= bounds.MaxX; x++)
-            for (int z = bounds.MinZ; z < bounds.MaxZ; z++)
-                DrawLine3D(map.Vertex(x, z) + new Vector3(0, .02f, 0), map.Vertex(x, z + 1) + new Vector3(0, .02f, 0), new Color(220, 230, 220, x % 5 == 0 ? 95 : 35));
-            for (int z = bounds.MinZ; z <= bounds.MaxZ; z++)
-            for (int x = bounds.MinX; x < bounds.MaxX; x++)
-                DrawLine3D(map.Vertex(x, z) + new Vector3(0, .02f, 0), map.Vertex(x + 1, z) + new Vector3(0, .02f, 0), new Color(220, 230, 220, z % 5 == 0 ? 95 : 35));
+            // Half-unit segments also follow the terrain's diagonal triangle edges on slopes.
+            Vector3 GridPoint(int x, int z) => map.GroundPosition(x * .5f - map.Width / 2f, z * .5f - map.Depth / 2f) + new Vector3(0, .02f, 0);
+            for (int x = bounds.MinX * 2; x <= bounds.MaxX * 2; x++)
+            for (int z = bounds.MinZ * 2; z < bounds.MaxZ * 2; z++)
+                DrawLine3D(GridPoint(x, z), GridPoint(x, z + 1), new Color(220, 230, 220, x % 10 == 0 ? 95 : 35));
+            for (int z = bounds.MinZ * 2; z <= bounds.MaxZ * 2; z++)
+            for (int x = bounds.MinX * 2; x < bounds.MaxX * 2; x++)
+                DrawLine3D(GridPoint(x, z), GridPoint(x + 1, z), new Color(220, 230, 220, z % 10 == 0 ? 95 : 35));
         }
         var forward = Vector3.Normalize(camera.Target - camera.Position);
         var items = map.SceneEntities.Select(o => (Entity: (SceneObject?)o, o.Asset, Position: map.GroundPosition(o), o.Height,
@@ -174,9 +187,10 @@ sealed partial class WorldRenderer(WorldAssets assets)
     }
     public SpriteQuad GetSpriteQuad(Camera3D camera, string id, Vector3 position, float height)
     {
-        float width = assets.Sprites.TryGetValue(id, out var asset) ? height * asset.Texture.Width / asset.Texture.Height : height * .6f;
-        return BillboardGeometry.Create(camera, position, width, height);
+        return BillboardGeometry.Create(camera, position, SpriteWidth(id, height), height);
     }
+    float SpriteWidth(string id, float height) => assets.Sprites.TryGetValue(id, out var asset)
+        ? height * asset.SourceWidth / asset.SourceHeight : height * .6f;
     public void DrawOutline(Camera3D camera, SceneObject item, Color color, MapData? map = null)
     {
         var quad = GetSpriteQuad(camera, item.Asset, map?.GroundPosition(item) ?? item.Position, item.Height);

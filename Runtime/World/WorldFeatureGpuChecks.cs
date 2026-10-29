@@ -6,6 +6,7 @@ static class WorldFeatureGpuChecks
 {
     public static void Run(WorldAssets assets)
     {
+        WorldShadowGpuChecks.Run(assets);
         const int size = 512;
         const string spriteId = "objects/checks/occluder.png";
         var image = GenImageColor(32, 64, new(40, 210, 60, 255));

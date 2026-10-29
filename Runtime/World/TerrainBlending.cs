@@ -36,7 +36,9 @@ sealed class TerrainBlending : IDisposable
             {
                 int columns = int(atlasLayout.x);
                 vec2 tile = vec2(id % columns, id / columns);
-                vec2 pixel = tile * (atlasLayout.y + 2.0) + 1.0 + fract(fragTexCoord) * atlasLayout.y;
+                // Large inked ground textures span eight tiles; material painting still uses one-tile cells.
+                vec2 pixel = tile * (atlasLayout.y + 2.0) + 1.0 + fract(fragTexCoord / 8.0) * atlasLayout.y;
+                // Keep PNG colors; blending and scene lighting are applied separately below.
                 return texture(texture0, pixel / atlasLayout.zw).rgb;
             }
             void main()

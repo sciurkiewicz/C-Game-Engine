@@ -101,10 +101,10 @@ sealed partial class MapData
 
 sealed partial class MapDocument
 {
-    public ChestData PlaceChest(Vector3 position)
+    public ChestData PlaceChest(Vector3 position, float height = 1.4f)
     {
         Checkpoint(); var p = Map.Clamp(position);
-        var chest = new ChestData { X = p.X, Z = p.Z };
+        var chest = new ChestData { X = p.X, Z = p.Z, Height = height };
         Map.Chests.Add(chest); return chest;
     }
     public ChestData ConvertToChest(SceneObject item)

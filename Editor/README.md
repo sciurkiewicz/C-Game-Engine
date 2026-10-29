@@ -26,12 +26,14 @@ Każde narzędzie pozostaje aktywne po użyciu. Można stawiać kolejne obiekty,
 
 Biblioteka automatycznie odczytuje PNG z `Editor/objects/` oraz podkatalogów. Strzałki nad biblioteką zmieniają kategorię, kółko myszy przewija listę. Przezroczyste marginesy są pomijane podczas wczytywania, bez modyfikowania plików źródłowych.
 
+Nowe obiekty i skrzynie zachowują wspólną skalę **128 pikseli = 1 jednostka świata**: grafika 256 × 256 jest dwa razy szersza i wyższa niż 128 × 128. Przycinanie przezroczystych marginesów usuwa tylko puste miejsce, a zmniejszanie dużych tekstur na GPU nie zmienia skali. Wysokość można nadal zmienić ręcznie; zapisane mapy zachowują ustawione rozmiary.
+
 ## Sterowanie i zapis
 
 - WASD lub przeciąganie prawym/środkowym przyciskiem — przesuwanie widoku.
 - Kółko nad mapą — zoom. Kąt poziomy kamery pozostaje stały.
 - F — skupienie widoku na zaznaczonym obiekcie albo postaci.
-- G — widoczność siatki.
+- G — widoczność siatki pomocniczej z kratkami 0,5 × 0,5 jednostki, zgodnymi z przyciąganiem obiektów.
 - Delete — usunięcie zaznaczenia; Ctrl+D — duplikowanie obiektu.
 - Ctrl+Z / Ctrl+Y — cofnięcie / ponowienie, do 80 kroków. Całe pociągnięcie pędzla jest jednym krokiem.
 - Ctrl+S — zapis; Ctrl+O — wczytanie; Ctrl+N — nowa, pusta mapa.
@@ -65,7 +67,7 @@ Akcje triggerów to **Message**, **Dialogue**, **ToggleDoor**, **SpawnMonster**,
 
 W **Collision → Polygon → Draw polygon on map** klikaj narożniki, Enter zatwierdza, Backspace usuwa ostatni punkt, Escape anuluje. Wielokąt ma 3–32 wierzchołki, może być wklęsły, ale jego boki nie mogą się przecinać. Kolizje działają dla gracza, tras potworów i ataków; ruch nie przeskakuje przez cienkie ściany. Otwarte drzwi przepuszczają postacie. **Automatic** przywraca dawny okrąg zależny od wysokości obiektu.
 
-Zanikanie działa w Play/Runtime, gdy obiekt zasłania ciało gracza; przezroczystość zmienia się płynnie i wraca po odsłonięciu. Oświetlenie obejmuje teren, grafiki i wodę. Cienie są miękkimi cieniami kontaktowymi pod obiektami. Zmiana godziny w edytorze daje podgląd, a w grze czas biegnie po włączeniu cyklu dnia i nocy.
+Zanikanie działa w Play/Runtime, gdy obiekt zasłania ciało gracza; przezroczystość zmienia się płynnie i wraca po odsłonięciu. Oświetlenie obejmuje teren, grafiki i wodę. **World → Environment → Contact shadows** włącza miękkie, spłaszczone cienie pod obiektami i postaciami. Ich rozmiar wynika z szerokości i wysokości widocznej grafiki po przycięciu przezroczystych marginesów; skaluje się razem z obiektem, niezależnie od kolizji. Cienie dopasowują się do wzniesień i zagłębień, działają w obu rzutach, w edytorze, Play i Runtime. Zmiana godziny w edytorze daje podgląd, a w grze czas biegnie po włączeniu cyklu dnia i nocy.
 
 **F6 w Play** zapisuje postęp, **F9** go wczytuje: pozycję, HP, EQ, skrzynie i drzwi, stan potworów, wykonane triggery i porę dnia, także na odwiedzonych mapach. Podgląd używa osobnego pliku w `Editor/obj/progress/`; nie nadpisuje mapy roboczej ani zapisu Runtime. **Ctrl+S** nadal zapisuje mapę, a nie stan gry.
 
@@ -78,7 +80,23 @@ Teren ma siatki GPU w fragmentach **16 × 16** kafelków. Malowanie aktualizuje 
 
 Po dodaniu materiałów uruchom aplikację ponownie. Na razie grafiki postaci są statyczne: nie ma obsługi arkuszy animacji. Bez grafiki postaci wyświetlany jest niebieski znacznik. Wbudowane materiały podłoża to grass, dirt, sand i stone. Woda ma własne narzędzie Water i zachowuje wybrany materiał dna.
 
-**New / Ctrl+N** otwiera okno wyboru szerokości X i głębokości Z. Wpisz liczby, użyj przycisków +/- lub gotowych rozmiarów, w tym 2048 × 2048. Każdy bok może mieć 4–2048 kafelków; mapa może być prostokątna. Tab przełącza pole, Enter tworzy mapę, Escape anuluje. Po wybraniu rozmiaru edytor pyta o niezapisane zmiany. Utworzenie mapy można cofnąć.
+Dodatkowe materiały są osobnymi plikami, dostępnymi w **Ground** po ponownym uruchomieniu aplikacji. Oryginalna trawa pozostaje jako `grass.png`; jej spokojniejszy wariant to `grass_calm.png`. Pozostałe bazowe materiały zachowują dotychczasowe nazwy.
+
+| Plik | Materiał |
+| --- | --- |
+| [grass_calm.png](terrain/grass_calm.png) | Spokojniejsza, mniej kontrastowa zielona trawa. |
+| [grass_dry.png](terrain/grass_dry.png) | Sucha, żółtawa trawa do polan i łąk. |
+| [moss.png](terrain/moss.png) | Zielony mech do wilgotnych fragmentów lasu. |
+| [forest_floor.png](terrain/forest_floor.png) | Leśna ściółka z drobnymi liśćmi i igliwiem. |
+| [mud.png](terrain/mud.png) | Ciemne, wilgotne błoto. |
+| [gravel.png](terrain/gravel.png) | Drobny żwir do dróg i otoczenia skał. |
+| [cobblestone.png](terrain/cobblestone.png) | Kamienny bruk do ścieżek i zabudowań. |
+| [sand_wet.png](terrain/sand_wet.png) | Ciemniejszy, mokry piasek do brzegów wody. |
+| [snow.png](terrain/snow.png) | Jasny śnieg z delikatnymi chłodnymi zagłębieniami. |
+
+Podłoże korzysta z kolorów PNG bez dodatkowej korekcji nasycenia, jasności ani barwy. Na mapie wygląd zmieniają blendowanie sąsiednich materiałów, cieniowanie zboczy oraz ustawienia **World → Environment** i światła. Aby porównać kolory z plikiem, wyłącz **Lighting** i **Shadows** oraz sprawdź płaski fragment jednego materiału. Zmiana PNG wymaga ponownego uruchomienia aplikacji, ale nie rekompilacji.
+
+**+ New map**, wyróżniony przycisk u góry obok nazwy pliku, lub **Ctrl+N** otwiera okno wyboru szerokości X i głębokości Z. Wpisz liczby, użyj przycisków +/- lub gotowych rozmiarów, w tym 2048 × 2048. Każdy bok może mieć 4–2048 kafelków; mapa może być prostokątna. **Create / Enter** tworzy mapę, Tab przełącza pole, Escape anuluje. Po wybraniu rozmiaru edytor pyta o niezapisane zmiany. Utworzenie mapy można cofnąć. **Save / Ctrl+S** zapisuje nową mapę w bieżącym pliku; aby pracować na osobnym pliku, uruchom edytor z argumentem `--map Runtime/Maps/nazwa.json`.
 
 Tekstury podłoża płynnie blendują się między sąsiednimi kafelkami, także przy zbiegu czterech materiałów i na zboczach. Dotyczy to zarówno wbudowanych materiałów, jak i własnych PNG. Przejścia aktualizują się podczas malowania oraz cofania i działają identycznie w obu rzutach, Play oraz Runtime; istniejące mapy korzystają z nich automatycznie.
 

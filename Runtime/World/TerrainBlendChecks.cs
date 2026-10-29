@@ -40,6 +40,39 @@ static class TerrainBlendChecks
                 Check(point.X >= 0 && point.Y >= 0 && point.X < size && point.Y < size, "sample lies inside the viewport");
                 return GetImageColor(frame, (int)point.X, (int)point.Y);
             }
+            map.Environment.Shadows = false;
+            foreach (string id in new[] { "grass", "dirt", "sand", "stone" })
+            {
+                Array.Fill(map.Tiles, id);
+                var texture = assets.Terrain[id];
+                // Draw the loaded PNG directly as an independent reference for the terrain shader.
+                BeginTextureMode(target); ClearBackground(Color.Black);
+                DrawTexturePro(texture, new(0, 0, texture.Width, texture.Height), new(0, 0, size, size), Vector2.Zero, 0, Color.White);
+                EndTextureMode();
+                var reference = LoadImageFromTexture(target.Texture); ImageFlipVertical(ref reference);
+                try
+                {
+                    foreach (bool lighting in new[] { false, true })
+                    {
+                        map.Environment.Lighting = lighting;
+                        map.Environment.TimeOfDay = lighting ? 12 : 0;
+                        var actual = Capture();
+                        try
+                        {
+                            for (float z = -3.25f; z <= 3; z += .75f)
+                            for (float x = -3.25f; x <= 3; x += .75f)
+                            {
+                                var expected = Pixel(reference, x, z); var pixel = Pixel(actual, x, z);
+                                // Flat terrain has a small neutral directional shade; RGB grading must not be added.
+                                Check(Difference(pixel, expected) <= 4,
+                                    $"{id} retains PNG colors with lighting {(lighting ? "at noon" : "disabled")}: expected {expected.R},{expected.G},{expected.B}, got {pixel.R},{pixel.G},{pixel.B}");
+                            }
+                        }
+                        finally { UnloadImage(actual); }
+                    }
+                }
+                finally { UnloadImage(reference); }
+            }
             for (int z = 0; z < map.Depth; z++)
             for (int x = 0; x < map.Width; x++) map.Tiles[z * map.Width + x] = ids[x < 4 ? 0 : 2];
             var frame = Capture();
@@ -152,7 +185,7 @@ static class TerrainBlendChecks
                 }
                 finally { UnloadImage(frame); }
             }
-            Console.WriteLine("Terrain blending GPU checks passed: centres, smooth edges/corners, custom materials, atlas gutters, painting/undo, batch flushes, water beds and both projections on slopes.");
+            Console.WriteLine("Terrain blending GPU checks passed: source PNG colors, centres, smooth edges/corners, custom materials, atlas gutters, painting/undo, batch flushes, water beds and both projections on slopes.");
         }
         finally
         {

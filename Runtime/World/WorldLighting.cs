@@ -103,34 +103,4 @@ sealed partial class WorldRenderer
         value += Math.Clamp(target - value, -step, step); obstacleOpacity[item.Id] = value;
         return (byte)Math.Clamp((int)(value * 255), 0, 255);
     }
-    static void DrawShadows(MapData map, Vector3 player, float hour, TerrainBounds bounds)
-    {
-        if (!map.Environment.Shadows) return;
-        Rlgl.DrawRenderBatchActive(); Rlgl.DisableDepthMask();
-        Rlgl.SetTexture(0); Rlgl.Begin((int)DrawMode.Triangles);
-        float angle = hour * MathF.Tau / 24, strength = map.Environment.Lighting ? WorldLighting.Ambient(hour).Y : 1;
-        void Shadow(Vector3 feet, float radius, float height)
-        {
-            float tx = feet.X + map.Width / 2f, tz = feet.Z + map.Depth / 2f;
-            if (tx < bounds.MinX - 4 || tx > bounds.MaxX + 4 || tz < bounds.MinZ - 4 || tz > bounds.MaxZ + 4) return;
-            var center = feet + new Vector3(MathF.Cos(angle), 0, MathF.Sin(angle)) * height * .08f;
-            center.X = Math.Clamp(center.X, -map.Width / 2f, map.Width / 2f); center.Z = Math.Clamp(center.Z, -map.Depth / 2f, map.Depth / 2f);
-            center.Y = map.HeightAt(center.X, center.Z) + .025f;
-            for (int i = 0; i < 20; i++)
-            {
-                Vector3 Edge(int index)
-                {
-                    float a = index * MathF.Tau / 20, x = center.X + MathF.Cos(a) * radius, z = center.Z + MathF.Sin(a) * radius * 1.3f;
-                    x = Math.Clamp(x, -map.Width / 2f, map.Width / 2f); z = Math.Clamp(z, -map.Depth / 2f, map.Depth / 2f);
-                    return new(x, map.HeightAt(x, z) + .025f, z);
-                }
-                Rlgl.Color4ub(0, 0, 0, (byte)(80 * strength)); Rlgl.Vertex3f(center.X, center.Y, center.Z);
-                var b = Edge(i + 1); Rlgl.Color4ub(0, 0, 0, 0); Rlgl.Vertex3f(b.X, b.Y, b.Z);
-                var c = Edge(i); Rlgl.Vertex3f(c.X, c.Y, c.Z);
-            }
-        }
-        foreach (var item in map.SceneEntities) Shadow(map.GroundPosition(item), Math.Clamp(CollisionGeometry.Radius(item), .18f, 4), item.Height);
-        Shadow(player, .4f, map.Player.Height);
-        Rlgl.End(); Rlgl.SetTexture(0); Rlgl.DrawRenderBatchActive(); Rlgl.EnableDepthMask();
-    }
 }

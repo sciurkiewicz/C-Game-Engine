@@ -31,9 +31,10 @@ sealed partial class EditorApp
     }
     void ClickHeader(string name)
     {
+        if (name == "New") { Click(Left + 70, 23); return; }
         if (Enum.TryParse<EditTool>(name, out var editTool)) { Click(16 + (int)editTool * (ToolbarToolWidth + 2) + ToolbarToolWidth / 2, 60); return; }
         int start = 16 + Enum.GetValues<EditTool>().Length * (ToolbarToolWidth + 2);
-        int offset = name switch { "Undo" => 40, "Redo" => 112, "Save" => 199, "Load" => 275, "New" => 348, _ => throw new ArgumentException(name) };
+        int offset = name switch { "Undo" => 40, "Redo" => 112, "Save" => 199, "Load" => 275, _ => throw new ArgumentException(name) };
         Click(start + offset, 60);
     }
     static void Verify(bool condition, string message)

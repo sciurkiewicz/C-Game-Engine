@@ -27,7 +27,7 @@ Osobna gra odczytuje ostatnio zapisaną mapę:
 dotnet run --project Runtime
 ```
 
-Przed pierwszym zapisem obie aplikacje wyświetlają przykładową scenę z dostarczonymi obiektami. **New** pozwala wybrać szerokość i głębokość pustej mapy, od 4 do 2048 kafelków na bok. Edytor pyta o niezapisane zmiany przed utworzeniem nowej mapy, wczytaniem lub zamknięciem.
+Przed pierwszym zapisem obie aplikacje wyświetlają przykładową scenę z dostarczonymi obiektami. Wyróżniony przycisk **+ New map** u góry obok nazwy pliku lub **Ctrl+N** pozwala wybrać szerokość i głębokość pustej mapy, od 4 do 2048 kafelków na bok. Zatwierdź rozmiar przyciskiem **Create** lub klawiszem Enter. Edytor pyta o niezapisane zmiany przed utworzeniem nowej mapy, wczytaniem lub zamknięciem.
 
 W grze podejdź do NPC i naciśnij **E**. Dialog ma strukturę **Start → kwestia NPC → odpowiedzi bohatera → kolejne kwestie NPC**. Odpowiedź wybierzesz myszą, klawiszami 1–9 albo strzałkami i Enter. Escape zamyka rozmowę; podczas dialogu postać pozostaje w miejscu.
 

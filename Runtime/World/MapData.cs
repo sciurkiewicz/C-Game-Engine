@@ -22,6 +22,7 @@ static class ProjectPaths
 
 class SceneObject
 {
+    public const float MinHeight = 1f / SpriteAsset.PixelsPerUnit, MaxHeight = 128;
     public string Id { get; set; } = Guid.NewGuid().ToString("N");
     public string Asset { get; set; } = "";
     public float X { get; set; }
@@ -122,7 +123,7 @@ sealed partial class MapData
         ValidateInventory();
         ValidateWorldFeatures();
     }
-    static bool ValidHeight(float h) => float.IsFinite(h) && h >= .25f && h <= 12;
+    static bool ValidHeight(float h) => float.IsFinite(h) && h >= SceneObject.MinHeight && h <= SceneObject.MaxHeight;
     public static MapData CreateEmpty(int width = 48, int depth = 48)
     {
         if (width < MinSize || width > MaxSize || depth < MinSize || depth > MaxSize)

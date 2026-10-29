@@ -212,7 +212,7 @@ sealed partial class EditorApp : IDisposable
         }
         if (tool == EditTool.Chest && IsMouseButtonPressed(MouseButton.Left))
         {
-            selectedId = document.PlaceChest(point).Id;
+            selectedId = document.PlaceChest(point, ChestHeight).Id;
             status = "Chest placed. Click to place another; Items assigns its contents.";
         }
         if (tool == EditTool.Monster && IsMouseButtonPressed(MouseButton.Left))
@@ -272,7 +272,7 @@ sealed partial class EditorApp : IDisposable
                 if (tool == EditTool.NPC)
                     renderer.DrawSprite(view, chosenNpcCharacter ?? "", point, 1.6f, new Color(244, 192, 96, 130), 130);
                 if (tool == EditTool.Chest)
-                    renderer.DrawSprite(view, ChestData.DefaultAsset, point, 1.4f, new Color(190, 140, 70, 130), 130);
+                    renderer.DrawSprite(view, ChestData.DefaultAsset, point, ChestHeight, new Color(190, 140, 70, 130), 130);
                 if (tool == EditTool.Monster)
                     renderer.DrawSprite(view, chosenMonsterCharacter ?? "", point, 1.6f, new Color(222, 75, 86, 130), 130);
                 if (tool == EditTool.Ground)
@@ -319,7 +319,8 @@ sealed partial class EditorApp : IDisposable
         DrawRectangle(0, 0, GetScreenWidth(), Top, Panel);
         Label("WILDWOOD", 18, 15, 19, Accent);
         Label("MAP EDITOR", 152, 18, 12, Muted);
-        Label(Path.GetFileName(mapPath) + (document.Dirty ? "  /  unsaved" : "  /  saved"), Left + 14, 17, 14, Text, GetScreenWidth() - Left - 420);
+        if (Button("+ New map", Left + 14, 8, 112, true, play == null)) Request("new");
+        Label(Path.GetFileName(mapPath) + (document.Dirty ? "  /  unsaved" : "  /  saved"), Left + 138, 17, 14, Text, GetScreenWidth() - Left - 486);
         if (Button("World", GetScreenWidth() - 330, 8, 84, false, play == null)) OpenWorldTools();
         if (Button(camera.Projection == ViewProjection.Isometric ? "View: Isometric" : "View: Perspective",
             GetScreenWidth() - 236, 8, 172, false, play == null))
@@ -335,7 +336,6 @@ sealed partial class EditorApp : IDisposable
         if (Button("Redo", x + 79, 46, 65, false, play == null && document.CanRedo)) Redo();
         if (Button("Save", x + 164, 46, 70, false, play == null)) Save();
         if (Button("Load", x + 240, 46, 70, false, play == null)) Request("load");
-        if (Button("New", x + 316, 46, 65, false, play == null)) Request("new");
         if (Button(play == null ? "Play  F5" : "Stop  F5", GetScreenWidth() - 128, 46, 110, true)) TogglePlay();
         DrawLine(0, Top - 1, GetScreenWidth(), Top - 1, Border);
     }
@@ -499,7 +499,7 @@ sealed partial class EditorApp : IDisposable
         else if (tool == EditTool.Place)
         {
             Label(activePrefab?.Name ?? Path.GetFileNameWithoutExtension(chosenAsset), x, 148, 16, Accent, 220);
-            Stepper("Height", placeHeight, x, 190, v => placeHeight = Math.Clamp(v, .25f, 12), .25f);
+            Stepper("Height", placeHeight, x, 190, v => placeHeight = Math.Clamp(v, SceneObject.MinHeight, SceneObject.MaxHeight), .25f);
             if (Button(placeSolid ? "Collision: ON" : "Collision: OFF", x, 248, 218, placeSolid)) placeSolid = !placeSolid;
             Label("Click to place. Repeat freely.", x, 294, 13, Muted);
         }
@@ -530,7 +530,7 @@ sealed partial class EditorApp : IDisposable
             Label(selected is NpcData actor ? actor.Name : selected is MonsterData namedMonster ? namedMonster.Name : selected is ChestData namedChest ? namedChest.Name : Path.GetFileNameWithoutExtension(selected.Asset), x, 148, 16, Accent, 220);
             Stepper("X", selected.X, x, 184, v => ChangePosition(selected, v, selected.Z), .5f);
             Stepper("Z", selected.Z, x, 234, v => ChangePosition(selected, selected.X, v), .5f);
-            Stepper("Height", selected.Height, x, 284, v => { document.Checkpoint(); selected.Height = Math.Clamp(v, .25f, 12); }, .25f);
+            Stepper("Height", selected.Height, x, 284, v => { document.Checkpoint(); selected.Height = Math.Clamp(v, SceneObject.MinHeight, SceneObject.MaxHeight); }, .25f);
             if (Button(selected.Solid ? "Collision: ON" : "Collision: OFF", x, 340, 132, selected.Solid)) { document.Checkpoint(); selected.Solid = !selected.Solid; }
             if (Button("Edit shape", x + 140, 340, 78)) OpenWorldTools("Collision");
             if (Button("Duplicate", x, 385, 105)) Duplicate();

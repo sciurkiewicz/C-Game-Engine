@@ -3,6 +3,7 @@ using static Raylib_cs.Raylib;
 
 sealed partial class EditorApp
 {
+    float ChestHeight => assets.Sprites.TryGetValue(ChestData.DefaultAsset, out var sprite) ? sprite.DefaultHeight : 1.4f;
     string? chestInventoryId;
     bool editingPlayerInventory;
     readonly InventoryInteraction itemEditorInteraction = new();
