@@ -46,10 +46,15 @@ sealed class PlayerStart
     [JsonIgnore] public Vector3 Position => new(X, 0, Z);
 }
 
+[JsonConverter(typeof(JsonStringEnumConverter<MapType>))]
+enum MapType { OpenWorld, Building, Cave }
+
 sealed partial class MapData
 {
     public const int MinSize = 4, MaxSize = 2048;
     public int Version { get; set; } = 1;
+    public MapType Type { get; set; } = MapType.OpenWorld;
+    [JsonIgnore] public bool AlwaysDark => Type is MapType.Building or MapType.Cave;
     public int Width { get; set; } = 48;
     public int Depth { get; set; } = 48;
     public string[] Tiles { get; set; } = Enumerable.Repeat("grass", 48 * 48).ToArray();
@@ -99,7 +104,7 @@ sealed partial class MapData
         Math.Clamp(p.Z, -Depth / 2f + .4f, Depth / 2f - .4f));
     public void Validate()
     {
-        if (Version != 1 || Width < MinSize || Width > MaxSize || Depth < MinSize || Depth > MaxSize ||
+        if (Version != 1 || !Enum.IsDefined(Type) || Width < MinSize || Width > MaxSize || Depth < MinSize || Depth > MaxSize ||
             Tiles == null || Tiles.Length != Width * Depth || Tiles.Distinct().Any(t => !ProjectPaths.ValidAssetId(t)))
             throw new InvalidDataException("Invalid map dimensions, version or terrain.");
         ValidateTerrain();
@@ -124,11 +129,15 @@ sealed partial class MapData
         ValidateWorldFeatures();
     }
     static bool ValidHeight(float h) => float.IsFinite(h) && h >= SceneObject.MinHeight && h <= SceneObject.MaxHeight;
-    public static MapData CreateEmpty(int width = 48, int depth = 48)
+    public static MapData CreateEmpty(int width = 48, int depth = 48, MapType type = MapType.OpenWorld)
     {
         if (width < MinSize || width > MaxSize || depth < MinSize || depth > MaxSize)
             throw new ArgumentOutOfRangeException(nameof(width), $"Map sides must be {MinSize}-{MaxSize} tiles.");
-        return new() { Width = width, Depth = depth, Tiles = Enumerable.Repeat("grass", width * depth).ToArray() };
+        if (!Enum.IsDefined(type)) throw new ArgumentOutOfRangeException(nameof(type));
+        string ground = type switch { MapType.Building => "terrain/stone_tiles_ink.png", MapType.Cave => "stone", _ => "grass" };
+        var map = new MapData { Type = type, Width = width, Depth = depth, Tiles = Enumerable.Repeat(ground, width * depth).ToArray() };
+        if (map.AlwaysDark) { map.Environment.TimeOfDay = 0; map.Environment.DayNightCycle = false; }
+        return map;
     }
     public static MapData CreateDemo(IEnumerable<string> assetIds)
     {
@@ -217,9 +226,9 @@ sealed partial class MapDocument(MapData initial, bool saved)
         SaveHeightState();
         savedWater = Map.CopyWaterCells(); changedWater = 0; EndSculptStroke();
     }
-    public void New(int width = 48, int depth = 48)
+    public void New(int width = 48, int depth = 48, MapType type = MapType.OpenWorld)
     {
-        var map = MapData.CreateEmpty(width, depth);
+        var map = MapData.CreateEmpty(width, depth, type);
         Checkpoint(); Map = map; UpdateChangedTiles(); UpdateChangedHeights(); UpdateChangedWater();
     }
     public NpcData PlaceNpc(string? asset, Vector3 position)

@@ -29,7 +29,7 @@ sealed partial class WorldRenderer
         var forward = new Vector2(camera.Target.X - camera.Position.X, camera.Target.Z - camera.Position.Z);
         forward = forward.LengthSquared() > .000001f ? Vector2.Normalize(forward) : new(0, -1);
         var right = new Vector2(-forward.Y, forward.X);
-        float strength = map.Environment.Lighting ? WorldLighting.Ambient(hour).Y : 1;
+        float strength = WorldLighting.Ambient(map, hour).Y;
         byte opacity = (byte)(100 * strength);
         void Shadow(string id, Vector3 feet, float height)
         {

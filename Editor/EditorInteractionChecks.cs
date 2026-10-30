@@ -167,21 +167,21 @@ sealed partial class EditorApp
         Verify(MapData.Load(mapPath).Serialize() == saved, "saved map matches edited scene");
         ClickHeader("New");
         Verify(creatingMap && document.Map.Serialize() == saved, "New opens size selection without changing the current map");
-        int nx = GetScreenWidth() / 2 - 270, ny = GetScreenHeight() / 2 - 170;
-        Click(nx + 70, ny + 226); // 32 x 32 preset.
-        for (int i = 0; i < 4; i++) Click(nx + 302, ny + 151); // Depth 28.
+        int nx = (int)NewMapBounds.X, ny = (int)NewMapBounds.Y;
+        Click(nx + 70, ny + 349); // 32 x 32 preset.
+        for (int i = 0; i < 4; i++) Click(nx + 340, ny + 265); // Depth 28.
         TestFrame(); TestFrame();
         WorldRenderer.Screenshot(Path.Combine(ProjectPaths.Root, "Editor", "obj", "new-map-size.png"));
-        Click(nx + 130, ny + 300);
+        Click(nx + 130, ny + 465);
         Verify(document.Map.Objects.Count == 0 && document.Map.Npcs.Count == 0 && document.Map.Width == 32 && document.Map.Depth == 28, "new map uses selected rectangular size");
         ClickHeader("Load");
         Verify(pendingAction == "load", "unsaved work confirmation");
         Click(GetScreenWidth() / 2 - 230 + 215, GetScreenHeight() / 2 - 90 + 132);
         Verify(document.Map.Serialize() == saved && pendingAction == null, "discard and reload saved map");
         ClickHeader("New");
-        Click(nx + 470, ny + 226); // 2048 x 2048 preset.
+        Click(nx + 470, ny + 349); // 2048 x 2048 preset.
         Verify(widthInput == "2048" && depthInput == "2048" && ValidDimensions, "maximum-size preset and four-digit fields");
-        Click(nx + 130, ny + 300);
+        Click(nx + 130, ny + 465);
         Verify(document.Map.Width == 2048 && document.Map.Depth == 2048 && document.Map.Tiles.Length == 4_194_304, "create maximum-sized map through the UI");
         TestFrame(); TestFrame();
         WorldRenderer.Screenshot(Path.Combine(ProjectPaths.Root, "Editor", "obj", "large-map.png"));
@@ -194,6 +194,7 @@ sealed partial class EditorApp
         Press(KeyboardKey.F5);
         Complete("load");
         RunLaunchOptionsInteractionChecks();
+        RunNewMapInteractionChecks();
         RunTerrainInteractionChecks();
         TerrainBlendChecks.Run(assets);
         SpriteWaterChecks.Run(assets);

@@ -2,6 +2,8 @@
 
 Gra testowa odczytuje mapę stworzoną w edytorze i korzysta z tego samego renderera 2.5D. Obiekty i NPC są grafikami częściowo zwróconymi ku kamerze; na podłożu jest widoczna siatka. Podejście do NPC wyświetla podpowiedź rozmowy, a E otwiera jego dialog.
 
+Mapa zapisuje pole `Type`: `OpenWorld`, `Building` lub `Cave`. Budynki i jaskinie mają stały mrok, niezależny od godziny, cyklu dnia i nocy oraz flagi wyłączającej oświetlenie. Lokalne światła nadal rozświetlają teren, grafiki i wodę. Reguła obowiązuje także po przejściu między mapami i wczytaniu postępu. Starsze pliki bez `Type` są otwartym światem i zachowują dotychczasowe ustawienia dnia i nocy. Typ wybiera się w edytorze przez **hamburger → Nowa mapa**.
+
 Obiekty i postać dopasowują się do poziomego kierunku kamery, a ich nachylenie wynosi połowę kąta patrzenia w dół (maksymalnie 30°). Podstawa pozostaje zakotwiczona na wysokości terenu. To nasze ustawienie częściowego billboardingu inspirowane opisem twórcy Don't Starve, a nie odtworzenie nieudokumentowanych parametrów jego silnika. Podłoże jest siatką trójkątów o wysokościach edytowanych pędzlem Sculpt. Renderer, zaznaczanie i obrys w edytorze używają tej samej geometrii.
 
 Woda jest osobną powierzchnią 3D z animowanymi falami, przezroczystością i cieniowaniem. Wypełnia połączone zagłębienie do wybranego poziomu, a brzeg wyznacza przecięcie z terenem. Dno zachowuje wysokości i materiał. Wysokości wierzchołków terenu są zaokrąglane do 0,25 m. Postać porusza się na wysokości podłoża, a kamera podąża również pionowo. Głębokość ponad 0,55 m oraz strome zbocza blokują ruch.

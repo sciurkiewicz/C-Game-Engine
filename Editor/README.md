@@ -50,7 +50,7 @@ Przycisk **View: Perspective / View: Isometric** u góry po prawej przełącza r
 
 ## Środowisko, triggery, prefabrykaty i kolizje
 
-Przycisk **World** u góry oraz **hamburger → Apply & world tools** otwierają panel funkcji świata. Zmiany są zapisywane z mapą i obsługują Ctrl+Z / Ctrl+Y. Okno blokuje skróty i edycję pod spodem; Escape je zamyka.
+Przycisk **World** u góry oraz **hamburger → World tools** otwierają panel funkcji świata. Dostęp pozostaje też przez **Launch options → Apply & world tools**. Zmiany są zapisywane z mapą i obsługują Ctrl+Z / Ctrl+Y. Okno blokuje skróty i edycję pod spodem; Escape je zamyka.
 
 | Zakładka | Możliwości |
 | --- | --- |
@@ -101,6 +101,12 @@ Wszystkie tekstury w `Editor/terrain/` mają wspólny styl inspirowany **Don’t
 | [mud.png](terrain/mud.png) | Ciemne błoto z rysowanymi grudkami i zagłębieniami. |
 | [gravel.png](terrain/gravel.png) | Drobny żwir z ciemnymi konturami kamyków. |
 | [cobblestone.png](terrain/cobblestone.png) | Nieregularny kamienny bruk z mocnymi konturami tuszem. |
+| [city_sidewalk.png](terrain/city_sidewalk.png) | Kwadratowe płyty chodnikowe z rysowanymi spoinami i pęknięciami. |
+| [city_granite_setts.png](terrain/city_granite_setts.png) | Drobna kostka granitowa w lekko nierównych rzędach. |
+| [city_fan_paving.png](terrain/city_fan_paving.png) | Małe kamienie brukowe układane w powtarzające się wachlarze. |
+| [city_brick_herringbone.png](terrain/city_brick_herringbone.png) | Ceglany bruk w jodełkę z ciemnymi konturami. |
+| [city_cobbles_round.png](terrain/city_cobbles_round.png) | Kocie łby z drobnych, zaokrąglonych kamieni. |
+| [city_asphalt_cracked.png](terrain/city_asphalt_cracked.png) | Szary asfalt z nieregularnymi pęknięciami i kreskowaniem. |
 | [snow.png](terrain/snow.png) | Jasny śnieg z rysowanymi krawędziami zasp i kreskowaniem. |
 | [stone_tiles.png](terrain/stone_tiles.png) | Kamienne płyty, identyczne z zaakceptowanym wariantem `stone_tiles_ink.png`. |
 | [wood_planks_ink.png](terrain/wood_planks_ink.png) | Krzywe, sękate deski z konturami i kreskowaniem. |
@@ -114,9 +120,21 @@ Prompty ujednolicenia całej biblioteki i wspólny wzorzec stylu zapisano w [ter
 
 Pięć dodatkowych wariantów trawy ma ten sam styl konturów i kreskowania. Są osobnymi materiałami w **Ground** po ponownym uruchomieniu aplikacji. Ich prompty zapisano w [terrain/GENERATION_GRASS_VARIANTS.md](terrain/GENERATION_GRASS_VARIANTS.md).
 
+Sześć miejskich materiałów z przedrostkiem `city_` zachowuje ten sam styl ciemnego tuszu i kreskowania. Są dostępne w **Ground** po ponownym uruchomieniu aplikacji. Prompty i wzorce zapisano w [terrain/GENERATION_CITY.md](terrain/GENERATION_CITY.md).
+
 Podłoże korzysta z kolorów PNG bez dodatkowej korekcji nasycenia, jasności ani barwy. Na mapie wygląd zmieniają blendowanie sąsiednich materiałów, cieniowanie zboczy oraz ustawienia **World → Environment** i światła. Aby porównać kolory z plikiem, wyłącz **Lighting** i **Shadows** oraz sprawdź płaski fragment jednego materiału. Zmiana PNG wymaga ponownego uruchomienia aplikacji, ale nie rekompilacji.
 
-**+ New map**, wyróżniony przycisk u góry obok nazwy pliku, lub **Ctrl+N** otwiera okno wyboru szerokości X i głębokości Z. Wpisz liczby, użyj przycisków +/- lub gotowych rozmiarów, w tym 2048 × 2048. Każdy bok może mieć 4–2048 kafelków; mapa może być prostokątna. **Create / Enter** tworzy mapę, Tab przełącza pole, Escape anuluje. Po wybraniu rozmiaru edytor pyta o niezapisane zmiany. Utworzenie mapy można cofnąć. **Save / Ctrl+S** zapisuje nową mapę w bieżącym pliku; aby pracować na osobnym pliku, uruchom edytor z argumentem `--map Runtime/Maps/nazwa.json`.
+**Hamburger w prawym górnym rogu → Nowa mapa** otwiera okno wyboru typu, szerokości X i głębokości Z. Ten sam formularz otwierają **+ New map** oraz **Ctrl+N**. Wpisz rozmiary, użyj przycisków +/- lub gotowych wartości, w tym 2048 × 2048. Każdy bok może mieć 4–2048 kafelków; mapa może być prostokątna. **Utwórz / Enter** tworzy mapę, Tab przełącza pole, **Anuluj / Escape** zamyka okno. Przed zastąpieniem niezapisanej mapy pojawia się wybór Save / Discard / Cancel. Utworzenie mapy wraz z typem i oświetleniem można cofnąć i ponowić.
+
+| Typ | Początkowe podłoże i oświetlenie |
+| --- | --- |
+| **Otwarty świat** | Trawa; oświetlenie i opcjonalny cykl dnia i nocy według ustawień Environment. |
+| **Budynek** | Kamienne płyty; stały mrok, rozświetlany lokalnymi światłami. |
+| **Jaskinia** | Skaliste podłoże; stały mrok, rozświetlany lokalnymi światłami. |
+
+Typ zapisuje się z mapą i obowiązuje w edytorze, Play oraz Runtime. W budynku i jaskini pora dnia nie rozjaśnia otoczenia, także po wczytaniu mapy lub postępu; w Environment kontrolki wyłączania Lighting, cyklu i godziny są zablokowane. Światła dodaje się w **World → Lights**. Starsze mapy bez typu są otwartym światem i zachowują dotychczasowe oświetlenie.
+
+Hamburger zawiera też **Launch options** oraz **World tools**. Escape lub kliknięcie poza menu zamyka je; kliknięcie zamykające nie uruchamia narzędzia pod menu. **Save / Ctrl+S** nadal zapisuje mapę w bieżącym pliku; aby pracować na osobnym pliku, uruchom edytor z argumentem `--map Runtime/Maps/nazwa.json`.
 
 Tekstury podłoża płynnie blendują się między sąsiednimi kafelkami, także przy zbiegu czterech materiałów i na zboczach. Dotyczy to zarówno wbudowanych materiałów, jak i własnych PNG. Przejścia aktualizują się podczas malowania oraz cofania i działają identycznie w obu rzutach, Play oraz Runtime; istniejące mapy korzystają z nich automatycznie.
 
@@ -187,6 +205,8 @@ dotnet run --project Editor -- --dialogue-link-interaction-test
 dotnet run --project Editor -- --dialogue-sequence-interaction-test
 dotnet run --project Editor -- --monster-interaction-test
 dotnet run --project Editor -- --launch-options-interaction-test
+dotnet run --project Editor -- --new-map-interaction-test
+dotnet run --project Editor -- --world-gpu-test
 dotnet run --project Editor -- --world-interaction-test
 ```
 
@@ -199,5 +219,7 @@ Pierwszy test sprawdza dane i operacje edycji bez okna, w tym przedmioty, skrzyn
 `--monster-interaction-test` sprawdza dodawanie, zaznaczanie, przeciąganie, nazwę, grafikę, wszystkie statystyki, cofanie, duplikowanie, usuwanie, zapis/wczytanie, małe okno, pościg, obrażenia, pauzę w panelach, Spację, śmierć i restart przez Enter. Pełny test interakcji także go uruchamia. Testy danych i logiki walki są częścią `--editor-test`.
 
 `--launch-options-interaction-test` sprawdza przełącznik rzutów, hamburger i modal, blokowanie skrótów w oknie, anulowanie, zatwierdzanie, cofanie, zapis/wczytanie, zaznaczanie i przeciąganie w izometrii, ruch i zoom w Play oraz minimalny rozmiar okna. Pełny test interakcji także go uruchamia. Zrzuty zapisuje w `Editor/obj/launch-options.png` i `Editor/obj/isometric-editor.png`.
+
+`--new-map-interaction-test` sprawdza pozycję Nowa mapa w hamburgerze, konfigurację trzech typów i prostokątnych rozmiarów, minimalne okno, anulowanie, walidację, potwierdzenie niezapisanej pracy, cofanie/ponawianie, zapis/wczytanie i stały mrok w budynku ze światłem. Zrzuty są w `Editor/obj/new-map-menu.png`, `new-map-building.png` i `new-map-building-play.png`. Testy danych typów są częścią `--editor-test` i `Runtime --world-test`; `--world-gpu-test` w edytorze lub Runtime sprawdza również ciemne piksele i lokalne światła w budynku i jaskini.
 
 `--world-interaction-test` sprawdza zakładki World, ustawienia środowiska, światła i dźwięki, rysowanie obszarów i wielokątów, drzwi, zaznaczanie i duplikowanie grup, bibliotekę prefabrykatów, zapis mapy oraz F6/F9 w Play. Korzysta z osobnej biblioteki w `Editor/obj/` i zapisuje `Editor/obj/world-tools.png`. Pełny test interakcji uruchamia również te sprawdzenia i testy GPU światła, cieni, zanikania oraz cache terenu.

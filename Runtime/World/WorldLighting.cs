@@ -43,13 +43,16 @@ static class WorldLighting
         float daylight = Math.Clamp(MathF.Sin((hour - 6) * MathF.PI / 12) * 3, 0, 1);
         return Vector3.Lerp(new(.16f, .20f, .32f), Vector3.One, daylight);
     }
+    public static bool Enabled(MapData map) => map.AlwaysDark || map.Environment.Lighting;
+    public static Vector3 Ambient(MapData map, float hour) => map.AlwaysDark ? Ambient(0) :
+        map.Environment.Lighting ? Ambient(hour) : Vector3.One;
     public static IEnumerable<PointLightData> AllLights(MapData map)
     {
         foreach (var light in map.Lights.Where(l => l.Enabled)) yield return light;
         foreach (var fire in map.Objects.Where(o => o.Asset.Contains("campfire", StringComparison.OrdinalIgnoreCase) || o.Asset.Contains("torch", StringComparison.OrdinalIgnoreCase)))
             yield return new() { Id = fire.Id, X = fire.X, Z = fire.Z, Height = Math.Min(fire.Height, 2), Radius = 6, Intensity = .85f, R = 255, G = 155, B = 65 };
     }
-    public static PointLightData[] Nearby(MapData map, Vector3 focus) => map.Environment.Lighting
+    public static PointLightData[] Nearby(MapData map, Vector3 focus) => Enabled(map)
         ? AllLights(map).OrderBy(l => Vector2.DistanceSquared(new(l.X, l.Z), new(focus.X, focus.Z))).Take(16).ToArray() : [];
     public static Vector3 Evaluate(MapData map, Vector3 point, Vector3 ambient, PointLightData[] lights)
     {
@@ -65,7 +68,7 @@ static class WorldLighting
     public static void Apply(Shader shader, MapData map, float hour, Vector3 focus)
     {
         var lights = Nearby(map, focus);
-        SetShaderValue(shader, GetShaderLocation(shader, "ambientLight"), map.Environment.Lighting ? Ambient(hour) : Vector3.One, ShaderUniformDataType.Vec3);
+        SetShaderValue(shader, GetShaderLocation(shader, "ambientLight"), Ambient(map, hour), ShaderUniformDataType.Vec3);
         SetShaderValue(shader, GetShaderLocation(shader, "lightCount"), lights.Length, ShaderUniformDataType.Int);
         if (lights.Length == 0) return;
         var positions = lights.Select(l => new Vector4(map.GroundPosition(l.X, l.Z) + Vector3.UnitY * l.Height, l.Radius)).ToArray();

@@ -4,6 +4,12 @@ using static Raylib_cs.Raylib;
 
 sealed partial class EditorApp
 {
+    void ClickLaunchOptionsMenu()
+    {
+        Click(GetScreenWidth() - 36, 23);
+        Verify(launchMenuOpen, "hamburger opens its menu");
+        var menu = LaunchMenuBounds; Click((int)menu.X + 130, (int)menu.Y + 67);
+    }
     public void RunLaunchOptionsInteractionChecks()
     {
         SetWindowSize(1440, 900); document.New(32, 32); tool = EditTool.Select; selectedId = null;
@@ -14,8 +20,8 @@ sealed partial class EditorApp
         ClickHeader("Undo"); Verify(camera.View.Projection == CameraProjection.Perspective && !document.Dirty, "undo synchronizes projection");
         ClickHeader("Redo"); Verify(camera.View.Projection == CameraProjection.Orthographic, "redo synchronizes projection");
         ClickHeader("Undo");
-        Click(GetScreenWidth() - 36, 23);
-        Verify(launchOptions != null && ModalOpen, "hamburger opens launch options");
+        ClickLaunchOptionsMenu();
+        Verify(launchOptions != null && ModalOpen && !launchMenuOpen, "menu opens launch options");
         var box = LaunchOptionsBounds; int x = (int)box.X, y = (int)box.Y;
         ClickHeader("Monster"); Press(KeyboardKey.F5); Press(KeyboardKey.Nine);
         Input(2, (int)KeyboardKey.W); TestFrame(); Input(1, (int)KeyboardKey.W); TestFrame();
@@ -23,7 +29,7 @@ sealed partial class EditorApp
         Click(x + 450, y + 142);
         Press(KeyboardKey.Escape);
         Verify(launchOptions == null && document.Map.Serialize() == saved, "cancel discards the settings draft");
-        Click(GetScreenWidth() - 36, 23);
+        ClickLaunchOptionsMenu();
         Click(x + 450, y + 142); // Isometric.
         Click(x + 335, y + 220); // Distance 29.
         Click(x + 510, y + 296); // Grid off.
@@ -66,7 +72,7 @@ sealed partial class EditorApp
         Press(KeyboardKey.Escape);
         Verify(play == null && document.Map.Runtime == options && document.Map.Player.Position == spawn,
             "Escape returns to editing and preserves map settings and spawn");
-        Click(GetScreenWidth() - 36, 23);
+        ClickLaunchOptionsMenu();
         SetWindowSize(1120, 720); TestFrame(); TestFrame(); box = LaunchOptionsBounds;
         Verify(box.X >= 0 && box.Y >= 0 && box.X + box.Width <= GetScreenWidth() && box.Y + box.Height <= GetScreenHeight(),
             "launch options fit the minimum window");

@@ -5,6 +5,7 @@ static class WorldFeatureChecks
 {
     public static void Run()
     {
+        MapTypeChecks.Run();
         const string tree = "objects/vegetation/trees/tree1.png";
         var map = MapData.CreateEmpty(16, 16);
         var door = new SceneObject { Asset = tree, X = 4, IsDoor = true, Collider = new() { Kind = ColliderKind.Box, Width = 3, Depth = .2f, Rotation = 30 } };

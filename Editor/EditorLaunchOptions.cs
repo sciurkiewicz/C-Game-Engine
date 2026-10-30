@@ -4,6 +4,8 @@ using static Raylib_cs.Raylib;
 sealed partial class EditorApp
 {
     RuntimeSettings? launchOptions;
+    bool launchMenuOpen, menuDismissedThisFrame;
+    Rectangle LaunchMenuBounds => new(GetScreenWidth() - 278, 48, 260, 136);
     Rectangle LaunchOptionsBounds => new(GetScreenWidth() / 2 - 310, GetScreenHeight() / 2 - 250, 620, 500);
 
     void ApplyRuntimeSettings()
@@ -21,12 +23,31 @@ sealed partial class EditorApp
     void DrawLaunchMenuButton()
     {
         int x = GetScreenWidth() - 54;
-        if (Button("", x, 8, 36, false, play == null))
+        if (Button("", x, 8, 36, launchMenuOpen, play == null && pendingAction == null, launchMenuOpen))
         {
             document.EndSculptStroke(); gesture = dragging = dragArmed = false;
-            launchOptions = document.Map.Runtime with { };
+            launchMenuOpen = !launchMenuOpen;
         }
         for (int i = 0; i < 3; i++) DrawRectangle(x + 10, 16 + i * 6, 16, 2, play == null ? Text : Muted);
+    }
+    void UpdateLaunchMenu()
+    {
+        if (IsKeyPressed(KeyboardKey.Escape)) { launchMenuOpen = false; return; }
+        if (IsMouseButtonPressed(MouseButton.Left) && !CheckCollisionPointRec(GetMousePosition(), LaunchMenuBounds) &&
+            !CheckCollisionPointRec(GetMousePosition(), new(GetScreenWidth() - 54, 8, 36, 30)))
+        { launchMenuOpen = false; menuDismissedThisFrame = true; }
+    }
+    void DrawLaunchMenu()
+    {
+        var box = LaunchMenuBounds; int x = (int)box.X, y = (int)box.Y;
+        DrawRectangleRec(box, Panel); DrawRectangleLinesEx(box, 1, Accent);
+        bool enabled = play == null && pendingAction == null;
+        if (Button("Nowa mapa", x + 10, y + 10, 240, false, enabled, true))
+        { launchMenuOpen = false; Request("new"); return; }
+        if (Button("Launch options", x + 10, y + 52, 240, false, enabled, true))
+        { launchMenuOpen = false; launchOptions = document.Map.Runtime with { }; return; }
+        if (Button("World tools", x + 10, y + 94, 240, false, enabled, true))
+        { launchMenuOpen = false; OpenWorldTools(); }
     }
     void UpdateLaunchOptions()
     {

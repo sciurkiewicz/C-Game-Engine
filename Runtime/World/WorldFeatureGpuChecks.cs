@@ -18,10 +18,10 @@ static class WorldFeatureGpuChecks
             var map = MapData.CreateEmpty(32, 32);
             var view = new Camera3D { Position = new(0, 20, 0), Target = Vector3.Zero, Up = -Vector3.UnitZ, FovY = 16, Projection = CameraProjection.Orthographic };
             Vector3 player = new(-100, 0, -100);
-            Image Capture()
+            Image Capture(float? hour = null)
             {
                 BeginTextureMode(target); ClearBackground(new(38, 47, 54, 255)); BeginMode3D(view);
-                renderer.Draw(map, view, false, player, size, size); EndMode3D(); EndTextureMode();
+                renderer.Draw(map, view, false, player, size, size, hour); EndMode3D(); EndTextureMode();
                 var frame = LoadImageFromTexture(target.Texture); ImageFlipVertical(ref frame); return frame;
             }
             Color Pixel(Image frame, Vector3 position)
@@ -50,6 +50,18 @@ static class WorldFeatureGpuChecks
             var quad = renderer.GetSpriteQuad(view, spriteId, map.GroundPosition(scenery), scenery.Height);
             var artDay = Sample(quad.Center); map.Environment.TimeOfDay = 0; var artNight = Sample(quad.Center);
             Check(artNight.G < artDay.G * .3f, "the same lighting affects sprites");
+            foreach (var type in new[] { MapType.Building, MapType.Cave })
+            {
+                map = MapData.CreateEmpty(32, 32, type); Array.Fill(map.Tiles, "grass");
+                map.Environment.Shadows = false; map.Environment.Lighting = false;
+                map.Environment.TimeOfDay = 12; map.Environment.DayNightCycle = true;
+                var frame = Capture(12); Color dark;
+                try { dark = Pixel(frame, new(1.5f, 0, 1.5f)); } finally { UnloadImage(frame); }
+                Check(dark.G < day.G * .3f && dark.R < day.R * .3f, "interior pixels stay dark even with noon and lighting disabled: " + type);
+                map.Lights.Add(new() { X = 1.5f, Z = 1.5f, Height = 1, Radius = 6, Intensity = 2, R = 255, G = 40, B = 15 });
+                var indoorLit = Sample(new(1.5f, 0, 1.5f));
+                Check(indoorLit.R > dark.R * 3 && indoorLit.R > indoorLit.G, "local lights illuminate dark interior pixels: " + type);
+            }
             foreach (var projection in Enum.GetValues<ViewProjection>())
             {
                 map = MapData.CreateEmpty(32, 32); map.Environment.Shadows = false;
@@ -90,7 +102,7 @@ static class WorldFeatureGpuChecks
                 try { Check(IsWaveValid(wave) && wave.FrameCount > 0, "generated placeholder decodes through Raylib audio"); }
                 finally { UnloadWave(wave); }
             }
-            Console.WriteLine("World GPU checks passed: day/night, colored lights, contact shadows, sprite lighting, occlusion in both views, partial chunk rebuilds/LRU and audio decoding.");
+            Console.WriteLine("World GPU checks passed: day/night, permanent interior darkness, colored lights, contact shadows, sprite lighting, occlusion in both views, partial chunk rebuilds/LRU and audio decoding.");
         }
         finally { UnloadRenderTexture(target); assets.Sprites.Remove(spriteId); UnloadTexture(texture); }
     }

@@ -4,6 +4,8 @@ using static Raylib_cs.Raylib;
 
 sealed partial class EditorApp
 {
+    public void RunWorldGpuChecks() => WorldFeatureGpuChecks.Run(assets);
+
     public void RunWorldFeatureInteractionChecks()
     {
         string library = prefabDirectory;

@@ -42,7 +42,7 @@ sealed partial class WorldRenderer
             .OrderByDescending(i => Vector3.Dot(new Vector3(i % map.Width - map.Width / 2f + .5f, map.WaterLevel,
                 i / map.Width - map.Depth / 2f + .5f) - camera.Position, forward)).ToArray();
         if (cells.Length == 0) return;
-        var ambient = map.Environment.Lighting ? WorldLighting.Ambient(hour) : Vector3.One;
+        var ambient = WorldLighting.Ambient(map, hour);
         var lights = WorldLighting.Nearby(map, camera.Target);
         Rlgl.DrawRenderBatchActive(); Rlgl.DisableDepthMask(); Rlgl.DisableBackfaceCulling();
         Rlgl.SetTexture(0); Rlgl.Begin((int)DrawMode.Triangles);

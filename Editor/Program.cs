@@ -26,11 +26,15 @@ try
     bool monsterTest = args.Contains("--monster-interaction-test");
     bool launchOptionsTest = args.Contains("--launch-options-interaction-test");
     bool worldTest = args.Contains("--world-interaction-test");
-    bool interactionTest = args.Contains("--interaction-test") || inventoryTest || dialogueLinkTest || dialogueSequenceTest || monsterTest || launchOptionsTest || worldTest;
+    bool newMapTest = args.Contains("--new-map-interaction-test");
+    bool worldGpuTest = args.Contains("--world-gpu-test");
+    bool interactionTest = args.Contains("--interaction-test") || inventoryTest || dialogueLinkTest || dialogueSequenceTest || monsterTest || launchOptionsTest || worldTest || newMapTest || worldGpuTest;
     string mapPath = interactionTest ? Path.Combine(ProjectPaths.Root, "Editor", "obj", "interaction-test.json") :
         mapArgument >= 0 ? Path.GetFullPath(args[mapArgument + 1]) : ProjectPaths.MapFile;
     using var editor = new EditorApp(mapPath);
-    if (worldTest) editor.RunWorldFeatureInteractionChecks();
+    if (worldGpuTest) editor.RunWorldGpuChecks();
+    else if (newMapTest) editor.RunNewMapInteractionChecks();
+    else if (worldTest) editor.RunWorldFeatureInteractionChecks();
     else if (launchOptionsTest) editor.RunLaunchOptionsInteractionChecks();
     else if (monsterTest) editor.RunMonsterInteractionChecks();
     else if (dialogueSequenceTest) editor.RunDialogueSequenceInteractionChecks();

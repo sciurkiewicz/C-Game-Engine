@@ -70,7 +70,7 @@ sealed partial class PlaySession
     public void ShowNotice(string message) { Notice = message; noticeSeconds = 5; }
     void ResetWorldState()
     {
-        TimeOfDay = Map.Environment.TimeOfDay;
+        TimeOfDay = Map.AlwaysDark ? 0 : Map.Environment.TimeOfDay;
         FiredTriggers.Clear(); insideTriggers.Clear(); Notice = ""; noticeSeconds = 0;
     }
     public bool TryMovePlayer(Vector3 destination)
@@ -82,7 +82,8 @@ sealed partial class PlaySession
     public void AdvanceWorld(float dt)
     {
         if (!float.IsFinite(dt) || dt <= 0 || !PlayerAlive || Dialogue.Active || InventoryOpen) return;
-        if (Map.Environment.DayNightCycle) TimeOfDay = (TimeOfDay + dt * 24 / Map.Environment.DayLengthSeconds) % 24;
+        if (Map.AlwaysDark) TimeOfDay = 0;
+        else if (Map.Environment.DayNightCycle) TimeOfDay = (TimeOfDay + dt * 24 / Map.Environment.DayLengthSeconds) % 24;
         var entered = Map.Triggers.Where(t => t.Enabled && t.Contains(Player)).ToArray();
         var previous = insideTriggers.ToHashSet(); insideTriggers.Clear();
         foreach (var trigger in entered) insideTriggers.Add(trigger.Id);
@@ -135,7 +136,7 @@ sealed partial class PlaySession
             var spawn = world.MonsterSpawns[actor.Id];
             monsters[actor.Id] = new(actor, Map.GroundPosition(spawn.X, spawn.Z)) { Health = world.MonsterHealth[actor.Id] };
         }
-        PlayerHealth = world.Health; TimeOfDay = world.TimeOfDay;
+        PlayerHealth = world.Health; TimeOfDay = Map.AlwaysDark ? 0 : world.TimeOfDay;
         FiredTriggers = world.FiredTriggers.ToHashSet(); insideTriggers.Clear();
         // Loading while standing in a repeatable trigger must not execute it a second time.
         foreach (var trigger in Map.Triggers.Where(t => t.Enabled && t.Contains(Player))) insideTriggers.Add(trigger.Id);

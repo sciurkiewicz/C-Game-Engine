@@ -50,11 +50,11 @@ sealed partial class EditorApp
     }
     bool WorldButton(string text, int x, int y, int width, bool active = false, bool enabled = true) =>
         Button(text, x, y, width, active, enabled && WorldControlsEnabled, true);
-    void WorldToggle(string name, bool value, int x, int y, int width, Action<bool> apply)
+    void WorldToggle(string name, bool value, int x, int y, int width, Action<bool> apply, bool enabled = true)
     {
-        if (WorldButton(name + (value ? ": ON" : ": OFF"), x, y, width, value)) { document.Checkpoint(); apply(!value); }
+        if (WorldButton(name + (value ? ": ON" : ": OFF"), x, y, width, value, enabled)) { document.Checkpoint(); apply(!value); }
     }
-    void WorldNumber(string label, float value, int x, int y, float step, float min, float max, Action<float> apply)
+    void WorldNumber(string label, float value, int x, int y, float step, float min, float max, Action<float> apply, bool enabled = true)
     {
         Label(label, x, y + 9, 13, Muted, 112);
         void Change(float delta)
@@ -62,9 +62,9 @@ sealed partial class EditorApp
             float next = Math.Clamp(MathF.Round(value + delta, 3), min, max);
             if (next == value) return; document.Checkpoint(); apply(next);
         }
-        if (WorldButton("-", x + 116, y, 28, false, value > min)) Change(-step);
+        if (WorldButton("-", x + 116, y, 28, false, enabled && value > min)) Change(-step);
         Label(value.ToString("0.##", CultureInfo.InvariantCulture), x + 151, y + 9, 13, Text, 64);
-        if (WorldButton("+", x + 220, y, 28, false, value < max)) Change(step);
+        if (WorldButton("+", x + 220, y, 28, false, enabled && value < max)) Change(step);
     }
     void WorldName(string title, string value, int x, int y, int width, Action<string> apply, int limit = 80)
     {
@@ -119,14 +119,15 @@ sealed partial class EditorApp
     void DrawEnvironmentTools(int x, int y)
     {
         var environment = document.Map.Environment;
+        bool interior = document.Map.AlwaysDark;
         int a = x + 24, b = x + 444;
-        WorldToggle("Lighting", environment.Lighting, a, y + 140, 330, v => environment.Lighting = v);
+        WorldToggle("Lighting", WorldLighting.Enabled(document.Map), a, y + 140, 330, v => environment.Lighting = v, !interior);
         WorldToggle("Contact shadows", environment.Shadows, a, y + 182, 330, v => environment.Shadows = v);
         WorldToggle("Fade blocking scenery", environment.FadeOccluders, a, y + 224, 330, v => environment.FadeOccluders = v);
         WorldNumber("Fade opacity", environment.OccluderOpacity, a, y + 266, .05f, .05f, .8f, v => environment.OccluderOpacity = v);
-        WorldToggle("Day / night cycle", environment.DayNightCycle, a, y + 308, 330, v => environment.DayNightCycle = v);
-        WorldNumber("Starting hour", environment.TimeOfDay, a, y + 350, .5f, 0, 24, v => environment.TimeOfDay = v);
-        WorldNumber("Day length (s)", environment.DayLengthSeconds, a, y + 392, 10, 10, 86400, v => environment.DayLengthSeconds = v);
+        WorldToggle("Day / night cycle", !interior && environment.DayNightCycle, a, y + 308, 330, v => environment.DayNightCycle = v, !interior);
+        WorldNumber("Starting hour", interior ? 0 : environment.TimeOfDay, a, y + 350, .5f, 0, 24, v => environment.TimeOfDay = v, !interior);
+        WorldNumber("Day length (s)", environment.DayLengthSeconds, a, y + 392, 10, 10, 86400, v => environment.DayLengthSeconds = v, !interior);
         WorldToggle("Spatial audio", environment.Audio, b, y + 140, 330, v => environment.Audio = v);
         WorldNumber("Master volume", environment.MasterVolume, b, y + 182, .05f, 0, 1, v => environment.MasterVolume = v);
         if (WorldButton("World gizmos" + (worldGizmos ? ": ON" : ": OFF"), b, y + 224, 330, worldGizmos)) worldGizmos = !worldGizmos;
@@ -136,7 +137,9 @@ sealed partial class EditorApp
         Label("Editor preview has its own progress slot.", b, y + 378, 13, Muted);
         Label("Lighting affects ground, sprites and water.", b, y + 422, 14, Text);
         Label("Blocking scenery fades only during play.", b, y + 448, 13, Muted);
-        Label("Save the map to use these settings in Runtime.", a, y + 502, 13, Muted);
+        Label("Typ mapy: " + MapTypeName(document.Map.Type), b, y + 478, 14, Accent);
+        Label(interior ? "Stały mrok we wnętrzach. Dodaj światła w zakładce Lights." :
+            "Save the map to use these settings in Runtime.", a, y + 502, 13, interior ? Accent : Muted);
     }
     void DrawLightTools(int x, int y)
     {

@@ -7,6 +7,10 @@ sealed partial class EditorApp
 {
     bool creatingMap;
     int newWidth = 48, newDepth = 48, dimensionFocus;
+    MapType newMapType;
+    Rectangle NewMapBounds => new(GetScreenWidth() / 2 - 310, GetScreenHeight() / 2 - 250, 620, 500);
+    static string MapTypeName(MapType type) => type switch
+    { MapType.Building => "Budynek", MapType.Cave => "Jaskinia", _ => "Otwarty świat" };
     bool replaceDimension;
     string widthInput = "48", depthInput = "48";
     string? dialogueNpcId, dialogueNodeId, replyLinkId;
@@ -29,9 +33,13 @@ sealed partial class EditorApp
     };
     void OpenNewMap()
     {
+        if (play != null) return;
+        launchMenuOpen = false;
         creatingMap = true;
+        newMapType = document.Map.Type;
         widthInput = document.Map.Width.ToString(); depthInput = document.Map.Depth.ToString();
         dimensionFocus = 0; replaceDimension = true;
+        document.EndSculptStroke();
         gesture = dragging = dragArmed = false;
     }
     bool ValidDimensions => int.TryParse(widthInput, out int width) && width >= MapData.MinSize && width <= MapData.MaxSize &&
@@ -63,31 +71,37 @@ sealed partial class EditorApp
     {
         bool enabled = pendingAction == null;
         DrawRectangle(0, 0, GetScreenWidth(), GetScreenHeight(), new Color(0, 0, 0, 180));
-        int x = GetScreenWidth() / 2 - 270, y = GetScreenHeight() / 2 - 170;
-        DrawRectangle(x, y, 540, 340, Panel); DrawRectangleLines(x, y, 540, 340, Border);
-        Label("New map", x + 24, y + 24, 24, Accent);
-        Label($"Size in tiles / metres: {MapData.MinSize}-{MapData.MaxSize} on each side", x + 24, y + 64, 15, Muted);
+        var box = NewMapBounds; int x = (int)box.X, y = (int)box.Y;
+        DrawRectangleRec(box, Panel); DrawRectangleLinesEx(box, 1, Accent);
+        Label("Nowa mapa", x + 24, y + 24, 24, Accent);
+        Label($"Pusta mapa. Rozmiar: {MapData.MinSize}-{MapData.MaxSize} kafelków na bok.", x + 24, y + 64, 15, Muted);
+        Label("TYP MAPY", x + 24, y + 96, 13, Muted);
+        foreach (var type in Enum.GetValues<MapType>())
+            if (Button(MapTypeName(type), x + 24 + (int)type * 194, y + 120, 184, newMapType == type, enabled, true)) newMapType = type;
+        Label(newMapType == MapType.OpenWorld ? "Oświetlenie zależy od ustawień dnia i nocy." :
+            "Zawsze ciemno. Lampy i ogniska rozświetlają otoczenie.", x + 24, y + 168, 15, newMapType == MapType.OpenWorld ? Text : Accent);
         for (int i = 0; i < 2; i++)
         {
-            int dx = x + 24 + i * 260;
-            Label(i == 0 ? "Width (X)" : "Depth (Z)", dx, y + 108, 15, Text);
+            int dx = x + 24 + i * 300;
+            Label(i == 0 ? "Szerokość (X)" : "Głębokość (Z)", dx, y + 222, 15, Text);
             string value = i == 0 ? widthInput : depthInput;
-            if (Button(value + (dimensionFocus == i ? " |" : ""), dx + 46, y + 136, 142, dimensionFocus == i, enabled, true))
+            if (Button(value + (dimensionFocus == i ? " |" : ""), dx + 46, y + 250, 142, dimensionFocus == i, enabled, true))
             { dimensionFocus = i; replaceDimension = true; }
-            if (Button("-", dx, y + 136, 36, false, enabled, true)) AdjustDimension(i, -1);
-            if (Button("+", dx + 198, y + 136, 36, false, enabled, true)) AdjustDimension(i, 1);
+            if (Button("-", dx, y + 250, 36, false, enabled, true)) AdjustDimension(i, -1);
+            if (Button("+", dx + 198, y + 250, 36, false, enabled, true)) AdjustDimension(i, 1);
         }
-        Label("Presets", x + 24, y + 190, 13, Muted);
+        Label("Gotowe rozmiary", x + 24, y + 310, 13, Muted);
         int px = x + 24;
         foreach (int size in new[] { 32, 128, 512, 1024, 2048 })
         {
-            if (Button(size.ToString(), px, y + 213, 92, false, enabled, true))
+            if (Button(size.ToString(), px, y + 334, 92, false, enabled, true))
             { widthInput = depthInput = size.ToString(); replaceDimension = true; }
             px += 100;
         }
-        if (!ValidDimensions) Label($"Enter two sizes between {MapData.MinSize} and {MapData.MaxSize}.", x + 24, y + 254, 14, new Color(255, 177, 100, 255));
-        if (Button("Create", x + 24, y + 286, 230, true, enabled && ValidDimensions, true)) ConfirmNewMap();
-        if (Button("Cancel", x + 284, y + 286, 230, false, enabled, true)) creatingMap = false;
+        if (!ValidDimensions) Label($"Wpisz dwa rozmiary od {MapData.MinSize} do {MapData.MaxSize}.", x + 24, y + 384, 14, new Color(255, 177, 100, 255));
+        Label("Enter: utwórz / Esc: anuluj / Tab: zmień pole", x + 24, y + 408, 13, Muted);
+        if (Button("Utwórz", x + 24, y + 450, 270, true, enabled && ValidDimensions, true)) ConfirmNewMap();
+        if (Button("Anuluj", x + 326, y + 450, 270, false, enabled, true)) creatingMap = false;
     }
     void AdjustDimension(int which, int delta)
     {

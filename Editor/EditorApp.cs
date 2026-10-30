@@ -43,7 +43,7 @@ sealed partial class EditorApp : IDisposable
         Card = new(33, 44, 57, 255), Border = new(49, 64, 79, 255), Text = new(222, 233, 239, 255),
         Muted = new(140, 160, 176, 255), Accent = new(104, 217, 175, 255);
     SceneObject? Selection => document.Map.SceneEntities.FirstOrDefault(o => o.Id == selectedId);
-    bool ModalOpen => pendingAction != null || creatingMap || dialogueNpcId != null || textEdit != null || ItemEditorOpen || monsterSettingsId != null || launchOptions != null || worldPage != null;
+    bool ModalOpen => pendingAction != null || creatingMap || dialogueNpcId != null || textEdit != null || ItemEditorOpen || monsterSettingsId != null || launchOptions != null || worldPage != null || launchMenuOpen || menuDismissedThisFrame;
 
     public EditorApp(string mapPath)
     {
@@ -111,6 +111,8 @@ sealed partial class EditorApp : IDisposable
     }
     void Update(float dt)
     {
+        menuDismissedThisFrame = false;
+        if (launchMenuOpen) { UpdateLaunchMenu(); return; }
         if (textEdit != null) { UpdateTextEdit(); return; }
         if (worldPage != null) { UpdateWorldTools(); return; }
         if (launchOptions != null) { UpdateLaunchOptions(); return; }
@@ -311,6 +313,7 @@ sealed partial class EditorApp : IDisposable
         if (worldPage != null) DrawWorldTools();
         if (textEdit != null) DrawTextEdit();
         if (launchOptions != null) DrawLaunchOptions();
+        if (launchMenuOpen) DrawLaunchMenu();
         if (pendingAction != null) DrawConfirmation();
         EndDrawing();
     }
@@ -655,10 +658,12 @@ sealed partial class EditorApp : IDisposable
         if (action == "exit") { exit = true; return; }
         if (action == "new")
         {
-            document.New(newWidth, newDepth); selectedId = null; chosenCharacter = null; focus = Vector3.Zero;
+            document.New(newWidth, newDepth, newMapType); selectedId = null; chosenCharacter = null; focus = Vector3.Zero;
             selectedIds.Clear(); activePrefab = null;
+            drawingTrigger = false; drawingColliderId = null; triggerStart = triggerEnd = null; colliderPoints.Clear();
+            chosenTerrain = document.Map.Tiles[0]; tool = EditTool.Select; groundScroll = 0;
             gesture = dragging = dragArmed = false;
-            ApplyRuntimeSettings(); status = $"New map: {newWidth} x {newDepth} tiles.";
+            ApplyRuntimeSettings(); status = $"Nowa mapa: {MapTypeName(newMapType)}, {newWidth} x {newDepth}.";
             return;
         }
         try
