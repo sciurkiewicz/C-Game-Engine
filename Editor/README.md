@@ -87,6 +87,11 @@ Wszystkie tekstury w `Editor/terrain/` mają wspólny styl inspirowany **Don’t
 | [grass.png](terrain/grass.png) | Zielona trawa z ciemnymi konturami źdźbeł i kreskowaniem. |
 | [grass_calm.png](terrain/grass_calm.png) | Spokojniejsza, oliwkowa trawa z rzadszymi kępkami. |
 | [grass_dry.png](terrain/grass_dry.png) | Sucha, słomkowa trawa z poszarpaną kreską. |
+| [grass_forest.png](terrain/grass_forest.png) | Ciemniejsza, chłodna trawa leśna z gęstszymi kępkami. |
+| [grass_meadow.png](terrain/grass_meadow.png) | Jaśniejsza trawa łąkowa w przygaszonej zieleni. |
+| [grass_flowers.png](terrain/grass_flowers.png) | Zielona trawa z nielicznymi drobnymi kremowymi i fioletowymi kwiatami. |
+| [grass_sparse.png](terrain/grass_sparse.png) | Rzadkie kępki trawy na odsłoniętej ziemi. |
+| [grass_withered.png](terrain/grass_withered.png) | Przywiędła, brązowo-oliwkowa trawa z pochylonymi źdźbłami. |
 | [dirt.png](terrain/dirt.png) | Ubita ziemia z rysowanymi grudkami i drobnymi kamykami. |
 | [sand.png](terrain/sand.png) | Suchy piasek z ciemnymi liniami zmarszczek. |
 | [sand_wet.png](terrain/sand_wet.png) | Chłodniejszy, mokry piasek z kreskowanymi zagłębieniami. |
@@ -106,6 +111,8 @@ Wszystkie tekstury w `Editor/terrain/` mają wspólny styl inspirowany **Don’t
 Każda tekstura ma 1254 × 1254 px. Pomocniczy [water.png](terrain/water.png) również ma kreskowane fale w tym stylu; powierzchnia wody z narzędzia **Water** jest nadal rysowana proceduralnie.
 
 Prompty ujednolicenia całej biblioteki i wspólny wzorzec stylu zapisano w [terrain/GENERATION_ALL_INK.md](terrain/GENERATION_ALL_INK.md). Prompty wcześniejszych wariantów są w [terrain/GENERATION_INK.md](terrain/GENERATION_INK.md); [terrain/GENERATION.md](terrain/GENERATION.md) dokumentuje historyczny pierwszy zestaw.
+
+Pięć dodatkowych wariantów trawy ma ten sam styl konturów i kreskowania. Są osobnymi materiałami w **Ground** po ponownym uruchomieniu aplikacji. Ich prompty zapisano w [terrain/GENERATION_GRASS_VARIANTS.md](terrain/GENERATION_GRASS_VARIANTS.md).
 
 Podłoże korzysta z kolorów PNG bez dodatkowej korekcji nasycenia, jasności ani barwy. Na mapie wygląd zmieniają blendowanie sąsiednich materiałów, cieniowanie zboczy oraz ustawienia **World → Environment** i światła. Aby porównać kolory z plikiem, wyłącz **Lighting** i **Shadows** oraz sprawdź płaski fragment jednego materiału. Zmiana PNG wymaga ponownego uruchomienia aplikacji, ale nie rekompilacji.
 
