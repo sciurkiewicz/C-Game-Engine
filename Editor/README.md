@@ -80,38 +80,32 @@ Teren ma siatki GPU w fragmentach **16 × 16** kafelków. Malowanie aktualizuje 
 
 Po dodaniu materiałów uruchom aplikację ponownie. Na razie grafiki postaci są statyczne: nie ma obsługi arkuszy animacji. Bez grafiki postaci wyświetlany jest niebieski znacznik. Wbudowane materiały podłoża to grass, dirt, sand i stone. Woda ma własne narzędzie Water i zachowuje wybrany materiał dna.
 
-Dodatkowe materiały są osobnymi plikami, dostępnymi w **Ground** po ponownym uruchomieniu aplikacji. Oryginalna trawa pozostaje jako `grass.png`; jej spokojniejszy wariant to `grass_calm.png`. Pozostałe bazowe materiały zachowują dotychczasowe nazwy.
+Wszystkie tekstury w `Editor/terrain/` mają wspólny styl inspirowany **Don’t Starve**: ciemne, poszarpane kontury tuszem, widoczne kreskowanie i przygaszone kolory. Dotyczy to również bazowych materiałów oraz `cobblestone.png`. Podmiana zachowuje nazwy plików i identyfikatory materiałów, więc istniejące mapy otrzymują ten wygląd po ponownym uruchomieniu aplikacji.
 
 | Plik | Materiał |
 | --- | --- |
-| [grass_calm.png](terrain/grass_calm.png) | Spokojniejsza, mniej kontrastowa zielona trawa. |
-| [grass_dry.png](terrain/grass_dry.png) | Sucha, żółtawa trawa do polan i łąk. |
-| [moss.png](terrain/moss.png) | Zielony mech do wilgotnych fragmentów lasu. |
-| [forest_floor.png](terrain/forest_floor.png) | Leśna ściółka z drobnymi liśćmi i igliwiem. |
-| [mud.png](terrain/mud.png) | Ciemne, wilgotne błoto. |
-| [gravel.png](terrain/gravel.png) | Drobny żwir do dróg i otoczenia skał. |
-| [cobblestone.png](terrain/cobblestone.png) | Kamienny bruk do ścieżek i zabudowań. |
-| [sand_wet.png](terrain/sand_wet.png) | Ciemniejszy, mokry piasek do brzegów wody. |
-| [snow.png](terrain/snow.png) | Jasny śnieg z delikatnymi chłodnymi zagłębieniami. |
-| [wood_planks.png](terrain/wood_planks.png) | Zużyte dębowe deski do wnętrz i drewnianych pomostów. |
-| [stone_tiles.png](terrain/stone_tiles.png) | Kamienne płyty do dziedzińców i lochów. |
-| [brick_paving.png](terrain/brick_paving.png) | Ceglany bruk do ścieżek i placów. |
-| [autumn_leaves.png](terrain/autumn_leaves.png) | Jesienna ściółka z opadłymi liśćmi w odcieniach ochry i brązu. |
-| [cracked_earth.png](terrain/cracked_earth.png) | Sucha, spękana ziemia do wyschniętych koryt i dróg. |
-
-Prompty pierwszego zestawu pięciu PNG 1254 × 1254 w malowanym stylu zapisano w [terrain/GENERATION.md](terrain/GENERATION.md).
-
-Warianty w stylu **Don’t Starve** mają końcówkę `_ink`: poszarpane kontury tuszem, kreskowanie i przygaszone kolory. Są osobnymi materiałami w **Ground** po ponownym uruchomieniu edytora.
-
-| Plik | Materiał |
-| --- | --- |
+| [grass.png](terrain/grass.png) | Zielona trawa z ciemnymi konturami źdźbeł i kreskowaniem. |
+| [grass_calm.png](terrain/grass_calm.png) | Spokojniejsza, oliwkowa trawa z rzadszymi kępkami. |
+| [grass_dry.png](terrain/grass_dry.png) | Sucha, słomkowa trawa z poszarpaną kreską. |
+| [dirt.png](terrain/dirt.png) | Ubita ziemia z rysowanymi grudkami i drobnymi kamykami. |
+| [sand.png](terrain/sand.png) | Suchy piasek z ciemnymi liniami zmarszczek. |
+| [sand_wet.png](terrain/sand_wet.png) | Chłodniejszy, mokry piasek z kreskowanymi zagłębieniami. |
+| [stone.png](terrain/stone.png) | Skaliste podłoże z wyraźnymi szczelinami i kreskowaniem. |
+| [moss.png](terrain/moss.png) | Mech z nieregularnymi konturami drobnych poduszek. |
+| [forest_floor.png](terrain/forest_floor.png) | Leśna ściółka z obrysami liści i igliwia. |
+| [mud.png](terrain/mud.png) | Ciemne błoto z rysowanymi grudkami i zagłębieniami. |
+| [gravel.png](terrain/gravel.png) | Drobny żwir z ciemnymi konturami kamyków. |
+| [cobblestone.png](terrain/cobblestone.png) | Nieregularny kamienny bruk z mocnymi konturami tuszem. |
+| [snow.png](terrain/snow.png) | Jasny śnieg z rysowanymi krawędziami zasp i kreskowaniem. |
+| [stone_tiles.png](terrain/stone_tiles.png) | Kamienne płyty, identyczne z zaakceptowanym wariantem `stone_tiles_ink.png`. |
 | [wood_planks_ink.png](terrain/wood_planks_ink.png) | Krzywe, sękate deski z konturami i kreskowaniem. |
 | [stone_tiles_ink.png](terrain/stone_tiles_ink.png) | Ponure płyty kamienne z rysowanymi pęknięciami. |
 | [brick_paving_ink.png](terrain/brick_paving_ink.png) | Ceglany bruk z nieregularną kreską tuszu. |
-| [autumn_leaves_ink.png](terrain/autumn_leaves_ink.png) | Jesienna ściółka z ostrymi konturami liści. |
 | [cracked_earth_ink.png](terrain/cracked_earth_ink.png) | Sucha ziemia z poszarpanymi szczelinami i kreskowaniem. |
 
-Każdy wariant ma 1254 × 1254 px. Prompty i obrazy wejściowe opisano w [terrain/GENERATION_INK.md](terrain/GENERATION_INK.md).
+Każda tekstura ma 1254 × 1254 px. Pomocniczy [water.png](terrain/water.png) również ma kreskowane fale w tym stylu; powierzchnia wody z narzędzia **Water** jest nadal rysowana proceduralnie.
+
+Prompty ujednolicenia całej biblioteki i wspólny wzorzec stylu zapisano w [terrain/GENERATION_ALL_INK.md](terrain/GENERATION_ALL_INK.md). Prompty wcześniejszych wariantów są w [terrain/GENERATION_INK.md](terrain/GENERATION_INK.md); [terrain/GENERATION.md](terrain/GENERATION.md) dokumentuje historyczny pierwszy zestaw.
 
 Podłoże korzysta z kolorów PNG bez dodatkowej korekcji nasycenia, jasności ani barwy. Na mapie wygląd zmieniają blendowanie sąsiednich materiałów, cieniowanie zboczy oraz ustawienia **World → Environment** i światła. Aby porównać kolory z plikiem, wyłącz **Lighting** i **Shadows** oraz sprawdź płaski fragment jednego materiału. Zmiana PNG wymaga ponownego uruchomienia aplikacji, ale nie rekompilacji.
 
