@@ -1,27 +1,11 @@
 using System.Numerics;
 
-enum MonsterMode { Idle, Chasing, Attacking, Returning }
-
-sealed class MonsterState(MonsterData actor, Vector3 spawn)
-{
-    public MonsterData Actor { get; } = actor;
-    public Vector3 Spawn { get; } = spawn;
-    public int Health { get; internal set; } = actor.MaxHealth;
-    public MonsterMode Mode { get; internal set; }
-    public float HitFlash { get; internal set; }
-    internal float Cooldown, RouteCooldown;
-    internal Vector3 RouteTarget;
-    internal List<Vector3> Route = [];
-}
-
 sealed partial class PlaySession
 {
     MapSnapshot initialMap;
     readonly Dictionary<string, MonsterState> monsters = [];
     public IEnumerable<MonsterState> Monsters => monsters.Values;
-    public const int PlayerMaxHealth = 100, PlayerDamage = 10;
-    public const float PlayerAttackRange = 1.8f, PlayerAttackCooldown = .4f;
-    public int PlayerHealth { get; private set; } = PlayerMaxHealth;
+    public int PlayerHealth { get; private set; }
     public bool PlayerAlive => PlayerHealth > 0;
     public float PlayerHitFlash { get; private set; }
     public float PlayerAttackFlash { get; private set; }
@@ -32,7 +16,7 @@ sealed partial class PlaySession
         monsters.Clear();
         foreach (var monster in Map.Monsters)
             monsters.Add(monster.Id, new(monster, Map.GroundPosition(monster)));
-        PlayerHealth = PlayerMaxHealth; PlayerHitFlash = PlayerAttackFlash = playerAttackTimer = 0;
+        PlayerHealth = Character.MaxHealth; PlayerHitFlash = PlayerAttackFlash = playerAttackTimer = 0;
     }
     public void Restart()
     {
@@ -57,13 +41,13 @@ sealed partial class PlaySession
         }
         if (attack && playerAttackTimer <= .00001f)
         {
-            playerAttackTimer = PlayerAttackCooldown; PlayerAttackFlash = .15f;
-            var target = monsters.Values.Where(m => Vector3.Distance(Player, Map.GroundPosition(m.Actor)) <= PlayerAttackRange &&
+            playerAttackTimer = Character.AttackCooldown; PlayerAttackFlash = .15f;
+            var target = monsters.Values.Where(m => Vector3.Distance(Player, Map.GroundPosition(m.Actor)) <= Character.AttackRange &&
                     ClearStrike(Player, Map.GroundPosition(m.Actor), m.Actor.Id))
                 .OrderBy(m => Vector3.DistanceSquared(Player, Map.GroundPosition(m.Actor))).FirstOrDefault();
             if (target != null)
             {
-                target.Health = Math.Max(0, target.Health - PlayerDamage); target.HitFlash = .18f;
+                target.Health = Math.Max(0, target.Health - Character.Damage); target.HitFlash = .18f;
                 target.Mode = MonsterMode.Chasing;
                 if (target.Health == 0) { Map.Monsters.Remove(target.Actor); monsters.Remove(target.Actor.Id); }
             }

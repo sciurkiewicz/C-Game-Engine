@@ -12,10 +12,10 @@ dotnet run --project Editor
 | --- | --- |
 | Select / 1 | Kliknij obiekt, przeciągnij go po mapie. Panel po prawej zmienia X, Z, wysokość i kolizję. |
 | Place / 2 | Wybierz grafikę z biblioteki i kliknij mapę. Kolejne kliknięcia wstawiają kolejne obiekty. |
-| Ground / 3 | Wybierz materiał. Trzymaj lewy przycisk myszy, aby malować podłoże. Rozmiar pędzla: 1, 3, 5 lub 7 kafelków. |
+| Ground / 3 | Paint maluje materiałem, Roads rysuje drogi przez punkty, a Biomes maluje teren wraz z roślinnością i kamieniami. |
 | Player / 4 | Kliknij mapę, aby ustawić punkt startowy. Możesz wybrać grafikę postaci i jej wysokość. |
 | NPC / 5 | Wybierz PNG postaci lub złoty znacznik i kliknij mapę, aby dodać NPC. Ostatnio dodany NPC pozostaje zaznaczony; przycisk po prawej otwiera jego dialog. |
-| Sculpt / 6 | Przytrzymaj lewy przycisk myszy, aby podnosić, obniżać, wygładzać lub wyrównywać teren. |
+| Sculpt / 6 | Rzeźbienie pędzlem, stemple terenu oraz erozja wodna i osypywanie zboczy. |
 | Water / 7 | Kliknij zagłębienie, aby wypełnić je wodą do ustawionego poziomu, lub opróżnij zbiornik. |
 | Chest / 8 | Kliknij mapę, aby wstawić skrzynię. Zaznacz ją i wybierz Items, aby przypisać zawartość. |
 | Monster / 9 | Wybierz PNG postaci lub czerwony znacznik i kliknij mapę. Zaznacz potwora i wybierz Stats, aby ustawić walkę. |
@@ -26,14 +26,24 @@ Każde narzędzie pozostaje aktywne po użyciu. Można stawiać kolejne obiekty,
 
 Biblioteka automatycznie odczytuje PNG z `Editor/objects/` oraz podkatalogów. Strzałki nad biblioteką zmieniają kategorię, kółko myszy przewija listę. Przezroczyste marginesy są pomijane podczas wczytywania, bez modyfikowania plików źródłowych.
 
+Pole **Search graphics / Search materials** filtruje bibliotekę po nazwie i ścieżce, bez rozróżniania wielkości liter. Działa także dla grafik postaci i podłoża. Kliknij **x**, aby usunąć filtr. Podczas wpisywania tekstu skróty narzędzi, ruch kamery i F5 są zablokowane; Enter lub Escape kończy wpisywanie.
+
+**Find objects / Ctrl+F** oraz **hamburger → Find scene objects** otwierają wyszukiwarkę obiektów już umieszczonych na mapie. Wyniki obejmują dekoracje, NPC, skrzynie, potwory, punkt startowy, triggery, światła i dźwięki. Możesz filtrować typ, nazwę, grafikę lub identyfikator. Kliknięcie wyniku albo Enter dla pierwszego wyniku centruje kamerę i otwiera właściwości danego elementu.
+
+W **Place → Object brush: ON → Brush settings** ustaw promień, liczbę obiektów na odcisk, minimalny odstęp i losową zmianę rozmiaru. Przytrzymaj LMB i przesuwaj mysz, aby malować obiektami. **Ctrl+klik grafik w bibliotece** miesza kilka wybranych PNG. Pędzel pomija głęboką wodę i strome zbocza, zachowuje odstępy od istniejących aktorów i nie dokłada obiektów co klatkę przy nieruchomej myszy. Całe pociągnięcie cofa się jednym Ctrl+Z. Pędzel działa dla zwykłych obiektów; prefabrykaty i skrzynie zachowują osobne narzędzia.
+
 Nowe obiekty i skrzynie zachowują wspólną skalę **128 pikseli = 1 jednostka świata**: grafika 256 × 256 jest dwa razy szersza i wyższa niż 128 × 128. Przycinanie przezroczystych marginesów usuwa tylko puste miejsce, a zmniejszanie dużych tekstur na GPU nie zmienia skali. Wysokość można nadal zmienić ręcznie; zapisane mapy zachowują ustawione rozmiary.
 
 ## Sterowanie i zapis
 
-- WASD lub przeciąganie prawym/środkowym przyciskiem — przesuwanie widoku.
-- Kółko nad mapą — zoom. Kąt poziomy kamery pozostaje stały.
+- WASD lub przeciąganie prawym/środkowym przyciskiem — przesuwanie widoku w gotowych rzutach.
+- Kółko nad mapą — zoom; w wolnej kamerze przelot do przodu lub do tyłu.
+- V — kolejny tryb widoku: Perspective → Isometric → Free camera.
+- M — włączenie/wyłączenie minimapy.
+- Ctrl+F — wyszukiwanie obiektów na mapie.
+- Ctrl+Shift+C — zaznaczanie fragmentu mapy; Ctrl+C odświeża kopię zaznaczenia, Ctrl+V otwiera podgląd wklejania.
 - F — skupienie widoku na zaznaczonym obiekcie albo postaci.
-- G — widoczność siatki pomocniczej z kratkami 0,5 × 0,5 jednostki, zgodnymi z przyciąganiem obiektów.
+- G — widoczność siatki pomocniczej z kratkami 0,5 × 0,5 jednostki, zgodnymi z przyciąganiem obiektów; działa tylko podczas edycji mapy.
 - Delete — usunięcie zaznaczenia; Ctrl+D — duplikowanie obiektu.
 - Ctrl+Z / Ctrl+Y — cofnięcie / ponowienie, do 80 kroków. Całe pociągnięcie pędzla jest jednym krokiem.
 - Ctrl+S — zapis; Ctrl+O — wczytanie; Ctrl+N — nowa, pusta mapa.
@@ -44,9 +54,17 @@ Domyślny plik: `Runtime/Maps/world.json`. Argument `--map ścieżka.json` zmien
 
 Podgląd **Play** korzysta z kopii bieżącej mapy, także przed zapisem. Ruch w podglądzie nie zmienia punktu startowego. Osobny Runtime odczytuje mapę z dysku.
 
-Przycisk **View: Perspective / View: Isometric** u góry po prawej przełącza rzut w edytorze oraz ustawienie kamery gry. **Perspective** zachowuje dotychczasową perspektywę i zmianę nachylenia przy zoomie. **Isometric** to rzut ortograficzny z kierunkiem 45° i stałym nachyleniem około 35,26°; zoom zmienia skalę widoku. Przesuwanie kamery, zaznaczanie i przeciąganie działają w obu rzutach.
+Przycisk **View** u góry po prawej oraz **V** przełączają **Perspective → Isometric → Free camera**. Perspective i Isometric ustawiają też rzut kamery gry. **Perspective** zachowuje dotychczasową perspektywę i zmianę nachylenia przy zoomie. **Isometric** to rzut ortograficzny z kierunkiem 45° i stałym nachyleniem około 35,26°; zoom zmienia skalę widoku.
 
-**Menu hamburgerowe w prawym górnym rogu → Launch options** otwiera zaawansowane opcje uruchomieniowe: rzut kamery, początkową odległość kamery (15–50 m), widoczność siatki w grze i limit 30 / 60 / 120 FPS lub bez limitu. **Apply / Enter** zatwierdza, **Apply & Play** zatwierdza i uruchamia podgląd, **Cancel / Escape** odrzuca zmiany, a **Defaults** przywraca wartości domyślne w oknie. Zmiana ustawień jest jednym krokiem cofania. Zapisz mapę, aby używał ich również osobny Runtime. Starsze mapy zachowują dotychczasowy widok i ustawienia. Podczas Play opcje są nieaktywne; edytuj je po zatrzymaniu podglądu. Siatka edytora pozostaje niezależna od siatki gry.
+**Free camera** jest osobnym trybem roboczym edytora i można ją włączyć bezpośrednio przez **hamburger → Free camera**. Nie zmienia ustawień Play ani Runtime. **RMB + mysz** rozgląda się, **WASD** lata względem kierunku kamery, **Q/E** obniża/podnosi kamerę, **Shift** przyspiesza. **RMB + kółko** zmienia prędkość, samo kółko przesuwa kamerę, środkowy przycisk przesuwa kadr, a **Alt+LMB** obraca kamerę wokół zaznaczenia lub ostatniego punktu skupienia. **F** wraca do zaznaczonego obiektu albo startu gracza. Po zatrzymaniu Play edytor zachowuje wolną kamerę.
+
+Podgląd **Play / F5** pokazuje również efekty graficzne gry: mgłę, wiatr roślin, bloom, promienie słońca, kontury, gorące powietrze, deszcz z mokrym terenem i reakcję na obrażenia. Ustawienia znajdują się w [effects.json](../Runtime/Graphics/effects.json); po ich zmianie zatrzymaj i ponownie uruchom Play. W widoku roboczym mapy efekty są wyłączone, a siatka i narzędzia pozostają dostępne. [Instrukcja grafiki](../Runtime/Graphics/README.md) opisuje wszystkie parametry.
+
+**Minimap / M**, przycisk we właściwościach i pozycja w hamburgerze włączają podgląd całej bieżącej mapy w prawym górnym rogu widoku roboczego. Minimapę widać podczas edycji; pokazuje materiały i ukształtowanie terenu, wodę, obiekty, aktorów, triggery, zaznaczenie, punkt startowy oraz obszar widziany przez kamerę. Kliknięcie przestawia kamerę bez użycia aktywnego narzędzia. Zachowuje proporcje prostokątnych map i używa ograniczonej liczby próbek również dla 2048 × 2048.
+
+**Hamburger → Editor settings / recovery** ustawia automatyczne kopie odzyskiwania: wyłączone albo co **30 / 60 / 120 / 300 s**, domyślnie co minutę. Edytor przechowuje pięć ostatnich różnych stanów dla każdego pliku mapy w `.wildwood/autosaves/`, niezależnie od ręcznego zapisu. Zapis odbywa się w tle po zakończeniu edycji myszą i nie kasuje oznaczenia niezapisanych zmian. Po uruchomieniu edytor proponuje odzyskanie kopii nowszej niż mapa na dysku. **Browse recovery copies** pozwala przywrócić wcześniejszą wersję; przywrócenie można cofnąć. **Ctrl+S** nadal zapisuje mapę do jej pliku. Ustawienia edytora są przechowywane w `.wildwood/editor-settings.json`, poza formatem mapy.
+
+**Menu hamburgerowe w prawym górnym rogu → Launch options** otwiera zaawansowane opcje uruchomieniowe: rzut kamery, początkową odległość kamery (15–50 m) i limit 30 / 60 / 120 FPS lub bez limitu. **Apply / Enter** zatwierdza, **Apply & Play** zatwierdza i uruchamia podgląd, **Cancel / Escape** odrzuca zmiany, a **Defaults** przywraca wartości domyślne w oknie. Zmiana ustawień jest jednym krokiem cofania. Zapisz mapę, aby używał ich również osobny Runtime. Starsze mapy zachowują dotychczasowy widok i ustawienia. Podczas Play opcje są nieaktywne; edytuj je po zatrzymaniu podglądu. Siatka pomocnicza jest dostępna wyłącznie podczas edycji mapy (G); podgląd Play i Runtime nie wyświetlają jej nawet na starszych mapach z włączonym `ShowGrid`.
 
 ## Środowisko, triggery, prefabrykaty i kolizje
 
@@ -64,6 +82,8 @@ Przycisk **World** u góry oraz **hamburger → World tools** otwierają panel f
 Akcje triggerów to **Message**, **Dialogue**, **ToggleDoor**, **SpawnMonster**, **Teleport** i **ChangeMap**. Kliknięcie przycisku Action przełącza akcję. Dla rozmowy lub drzwi wybierz Target; obiekt jest drzwiami po zaznaczeniu **Door** w Collision. SpawnMonster używa domyślnych statystyk lub szablonu wybranego spośród potworów mapy. Teleport i spawn mają współrzędne docelowe. ChangeMap wskazuje względny plik JSON z `Runtime/Maps/` i punkt wejścia na docelowej mapie. Zmiana mapy przenosi HP i EQ oraz zachowuje stan odwiedzonych map. Once działa raz w sesji i jest uwzględniane w zapisie postępu; pozostałe obszary wykonują akcję przy ponownym wejściu, nie w każdej klatce.
 
 **Shift+klik** dodaje lub usuwa aktora z grupy. Przeciąganie zaznaczonego obiektu przesuwa całą grupę; Ctrl+D duplikuje ją, Delete usuwa, a Ctrl+Z cofa operację. W Prefabs wybierz **Save selected group**, nadaj nazwę, następnie **Place prefab on map** i klikaj mapę. Dialogi, statystyki, zawartość skrzyń i kształty kolizji pozostają zachowane, a identyfikatory są nowe. Escape kończy wstawianie.
+
+W narzędziu **Select** przeciągnij prostokąt od pustego miejsca, aby zaznaczyć obiekty środkiem ich grafik. **Ctrl+przeciągnięcie** rozpoczyna prostokąt także nad obiektem, **Shift** dodaje wyniki do obecnej grupy. Panel grupy przesuwa środek X/Z, zmienia względne rozmiary wszystkich grafik o ±10% oraz ustawia kolizję całej grupy. Zachowuje proporcje rozmiarów i odstępy przy przesuwaniu do granicy mapy. Każda operacja jest jednym krokiem cofania.
 
 W **Collision → Polygon → Draw polygon on map** klikaj narożniki, Enter zatwierdza, Backspace usuwa ostatni punkt, Escape anuluje. Wielokąt ma 3–32 wierzchołki, może być wklęsły, ale jego boki nie mogą się przecinać. Kolizje działają dla gracza, tras potworów i ataków; ruch nie przeskakuje przez cienkie ściany. Otwarte drzwi przepuszczają postacie. **Automatic** przywraca dawny okrąg zależny od wysokości obiektu.
 
@@ -124,6 +144,8 @@ Sześć miejskich materiałów z przedrostkiem `city_` zachowuje ten sam styl ci
 
 Podłoże korzysta z kolorów PNG bez dodatkowej korekcji nasycenia, jasności ani barwy. Na mapie wygląd zmieniają blendowanie sąsiednich materiałów, cieniowanie zboczy oraz ustawienia **World → Environment** i światła. Aby porównać kolory z plikiem, wyłącz **Lighting** i **Shadows** oraz sprawdź płaski fragment jednego materiału. Zmiana PNG wymaga ponownego uruchomienia aplikacji, ale nie rekompilacji.
 
+W widokach 3/4 i izometrycznym górna część tekstury PNG jest skierowana w głąb widoku, dzięki czemu źdźbła trawy mają właściwy kierunek. **Wolna kamera zachowuje ułożenie tekstur z ostatniego widoku 3/4 lub izometrycznego**: obracanie, orbitowanie, przesuwanie i zoom nie obracają ani nie przesuwają wzoru po terenie. Tekstury, pomalowane obszary i ich przejścia pozostają zakotwiczone na mapie. Play i Runtime zachowują orientację wybranego rzutu; reguła działa także na istniejących mapach.
+
 **Hamburger w prawym górnym rogu → Nowa mapa** otwiera okno wyboru typu, szerokości X i głębokości Z. Ten sam formularz otwierają **+ New map** oraz **Ctrl+N**. Wpisz rozmiary, użyj przycisków +/- lub gotowych wartości, w tym 2048 × 2048. Każdy bok może mieć 4–2048 kafelków; mapa może być prostokątna. **Utwórz / Enter** tworzy mapę, Tab przełącza pole, **Anuluj / Escape** zamyka okno. Przed zastąpieniem niezapisanej mapy pojawia się wybór Save / Discard / Cancel. Utworzenie mapy wraz z typem i oświetleniem można cofnąć i ponowić.
 
 | Typ | Początkowe podłoże i oświetlenie |
@@ -138,9 +160,41 @@ Hamburger zawiera też **Launch options** oraz **World tools**. Escape lub klikn
 
 Tekstury podłoża płynnie blendują się między sąsiednimi kafelkami, także przy zbiegu czterech materiałów i na zboczach. Dotyczy to zarówno wbudowanych materiałów, jak i własnych PNG. Przejścia aktualizują się podczas malowania oraz cofania i działają identycznie w obu rzutach, Play oraz Runtime; istniejące mapy korzystają z nich automatycznie.
 
+## Drogi i biomy
+
+**Ground / 3 → Roads** rysuje drogę jako krzywą. Wybierz materiał w bibliotece, ustaw **Width** i **Soft edge**, a następnie klikaj punkty na mapie. Zielony podgląd pokazuje przebieg i szerokość. Przeciąganie punktu poprawia jego położenie, **Backspace / Remove point** usuwa ostatni punkt, **Apply / Enter** zatwierdza całą drogę, a **Escape** porzuca szkic. Droga może mieć 2–128 punktów, szerokość 0,5–64 m i miękki brzeg do połowy szerokości.
+
+**Clear vegetation** usuwa zwykłe obiekty z kategorii vegetation w obrębie zatwierdzanej drogi. Ctrl+Z przywraca je razem z cofnięciem drogi. **Road list** otwiera zapisane krzywe: wybierz drogę, zmień jej punkty lub parametry i ponownie zatwierdź. Przycisk **Name** zmienia nazwę; **Delete road** usuwa otwartą drogę. Drogi są dostępne w wyszukiwarce **Ctrl+F → Road** i widoczne na minimapie.
+
+Droga dopasowuje się do wysokości podłoża, także po dalszym rzeźbieniu i erozji. Miękkie brzegi mieszają jej materiał z podłożem bez zastępowania pomalowanych kafelków. Zapis obejmuje punkty, materiał, szerokość i miękkość; ten sam wygląd obowiązuje w edytorze, Play oraz Runtime. Starsze mapy wczytują się bez dróg. Utworzenie, poprawienie lub usunięcie drogi jest jednym krokiem cofania.
+
+**Ground / 3 → Biomes** udostępnia **Forest**, **Meadow** i **Rocky**. Pędzel miesza materiały w nieregularne płaty i rozmieszcza dostępne grafiki drzew, krzewów, trawy lub kamieni. Każdy biom ma osobno pamiętane podczas pracy ustawienia: promień 1–32 m, gęstość obiektów, minimalny odstęp i losową skalę. Paleta pokazuje mieszankę podłoża oraz liczbę pasujących grafik z biblioteki; gdy takich grafik nie ma, można nadal malować teren.
+
+Przytrzymaj LMB i przesuwaj mysz, aby malować biomem. Gęstość zależy od powierzchni, a kolejne odciski od przebytej odległości; nieruchomy kursor nie dokłada obiektów co klatkę. Pędzel omija głęboką wodę, pozostawia miejsce wokół startu gracza i dróg oraz respektuje odstępy od istniejących aktorów. Na stromych zboczach używa kamiennego podłoża. Całe pociągnięcie, wraz z materiałami i nowymi obiektami, cofa się jednym Ctrl+Z i zapisuje w mapie.
+
+## Fragmenty mapy
+
+**Select → Copy map area**, **hamburger → Map fragments** lub **Ctrl+Shift+C** otwierają narzędzie kopiowania obszarów. Przeciągnij prostokąt po terenie; zaznaczenie obejmuje pełne kafelki i po zwolnieniu myszy automatycznie trafia do schowka. **Copy / Ctrl+C** ponownie odczytuje ten obszar, np. po dalszych zmianach. Kopia jest niezależna od mapy źródłowej i sama nie zmienia mapy ani historii cofania.
+
+**Paste / Ctrl+V** pokazuje obrys obszaru, siatkę wysokości i obiekty w miejscu kursora. Kliknięcie wkleja całość, a kolejne kliknięcia stawiają niezależne kopie. Przytrzymanie myszy nie powtarza operacji. Czerwony podgląd oznacza np. wyjście poza granice mapy lub przekroczenie zakresu wysokości. Fragment musi zmieścić się w całości. Escape opuszcza wklejanie, kolejny Escape zamyka narzędzie; schowek pozostaje dostępny także po utworzeniu lub wczytaniu innej mapy. Punkt startowy gracza i globalne ustawienia świata pozostają ustawieniami mapy docelowej.
+
+Fragment obejmuje materiały, wszystkie wierzchołki wysokości, maski wody, zwykłe obiekty z kolizjami, NPC z dialogami, skrzynie z zawartością, potwory ze statystykami, drogi, światła, dźwięki i triggery. Obiekty oraz elementy świata są wybierane po punkcie ustawienia; odcinki dróg przecinające zaznaczenie są przycinane według przebiegu osi. Kopie aktorów, dróg, elementów świata i przedmiotów w skrzyniach otrzymują nowe identyfikatory. Całe wklejenie — wraz z terenem, wodą i zawartością — cofa się jednym **Ctrl+Z**, a **Ctrl+Y** odtwarza ten sam układ i identyfikatory.
+
+**Paste options** pozwala osobno włączać teren z wysokościami i wodą, aktorów, drogi oraz światła/dźwięki/triggery. Teren zastępuje wskazane kafelki i wierzchołki. Pozostałe elementy domyślnie są dodawane; **Replace destination contents** zastępuje zawartość wybranych kategorii w prostokącie. Odcinki istniejących dróg poza nim zostają zachowane. Można też ustawić dodatkowe przesunięcie wysokości co 0,25 m.
+
+Mapa ma jeden poziom wody. Domyślne **Align copied water to this map's water level** przesuwa kopiowany teren z wodą względem tego poziomu, zachowując głębokość zbiornika przy zerowym dodatkowym przesunięciu. Nie zmienia poziomu wody w pozostałej części mapy. Wyłączenie tej opcji zachowuje bezwzględne wysokości źródłowe.
+
+Triggery odnoszące się do kopiowanych NPC i drzwi wskazują nowe kopie. Lokalne teleporty i punkty spawnu przesuwają się razem z fragmentem; przejścia do innych map zachowują plik oraz punkt wejścia. Odwołania do elementów spoza obszaru pozostają aktywne, jeśli cel istnieje na mapie docelowej. Brakujący cel wyłącza skopiowany trigger, a komunikat po wklejeniu podaje ich liczbę; cel można poprawić w **World → Triggers**.
+
+**Save fragment** nadaje nazwę i zapisuje obszar w `Editor/fragments/`. **Fragment library** otwiera zapisane polany, obozy lub fragmenty wiosek; **Place** uruchamia ich podgląd, a **Refresh** odświeża listę. Zapis fragmentu nie zapisuje mapy roboczej. Biblioteka działa między uruchomieniami i między mapami; zmienione lub brakujące PNG zachowują te same względne odwołania co zwykłe mapy.
+
 ## Terraformowanie i woda
 
 **Sculpt / 6** edytuje wysokości wierzchołków powierzchni. Wybierz **Raise**, **Lower**, **Smooth** lub **Flatten** po lewej. Panel po prawej ustawia promień pędzla, siłę oraz docelową wysokość dla Flatten. Przytrzymaj LMB nad mapą; Shift zamienia Raise z Lower. Krawędź pędzla ma łagodne przejście. Wysokości wierzchołków są zaokrąglane do 0,25 m, także przy wygładzaniu, wyrównywaniu i wczytywaniu map. Siła pędzla kumuluje się między klatkami, więc słaby pędzel nadal działa. Zakres wysokości wynosi od −32 do 64 metrów. Obrys pędzla, trafianie kursorem, siatka oraz pozycje obiektów i NPC dopasowują się do podłoża.
+
+**Sculpt → Terrain stamps** udostępnia gotowe kształty **Hill**, **Mountain**, **Ridge** i **Crater**. Jeden LMB nakłada cały stempel; kolejne kliknięcia budują teren warstwami. Promień wynosi **1–64 m**, wysokość odcisku **0,25–32 m**, a **Shape variation** ustawia nieregularność. Kolejne odciski mają inny obrót i szum kształtu. **Shift+klik** odwraca wysokość, np. drąży zagłębienie zamiast góry. Przytrzymanie myszy nie powiela stempla; każde kliknięcie jest jednym krokiem cofania. **Back to sculpt brushes** wraca do dotychczasowego rzeźbienia.
+
+**Sculpt → Terrain erosion** naturalizuje istniejące wzniesienia, np. po użyciu stempli. **Hydraulic erosion** symuluje krople spływające po zboczu, które żłobią kanały, przenoszą ziemię i odkładają ją niżej. **Talus / loose debris** osypuje strome fragmenty i tworzy łagodniejsze podnóża. Ustaw promień 1–64 m, siłę oraz liczbę kropli lub przebiegów osypywania, po czym kliknij obszar. Każde kliknięcie jest osobną operacją; przytrzymanie LMB jej nie powtarza. Obszar poza pędzlem pozostaje bez zmian, wysokości zachowują krok 0,25 m i zapisują się w mapie. Ctrl+Z przywraca teren sprzed całej symulacji, Ctrl+Y dokładnie odtwarza jej wynik.
 
 **Water / 7** wypełnia zbiorniki. Najpierw wykop zagłębienie narzędziem Sculpt, ustaw **Water level**, wybierz **Fill basin** i kliknij poniżej tego poziomu. Woda rozlewa się po połączonych częściach zagłębienia, zatrzymuje na suchych grzbietach i kończy dokładnie na przecięciu z terenem. Wypełnianie zachowuje wysokości i materiały dna. Powierzchnia ma animowane fale i przezroczystość. **Drain basin** opróżnia kliknięty zbiornik. **Water level** jest wspólny dla mapy i zmienia się co 0,25 m; podnoszenie poziomu rozszerza istniejące zbiorniki. Woda może sięgać krawędzi mapy, także podczas wypełniania i podnoszenia poziomu. Przycisk **Waves** przełącza fale.
 
@@ -182,6 +236,8 @@ W **Play / F5** podejdź do NPC i naciśnij E. **Enter / kliknij: dalej** przech
 
 **Player → Starting inventory** otwiera ten sam edytor dla startowego ekwipunku bohatera (10×4 pola). Zapis mapy obejmuje zawartość obu rodzajów siatek. Duplikat skrzyni otrzymuje własne egzemplarze itemków.
 
+Wspólne informacje i parametry bohatera są w [player.json](../Runtime/Characters/player.json): nazwa, opis, HP, obrażenia, prędkości chodu i biegu, zasięg oraz odstęp ataków i zasięg interakcji. Play odczytuje plik przy każdym uruchomieniu; po zmianie zatrzymaj i włącz podgląd ponownie. Punkt startowy, grafika, wysokość i początkowe EQ pozostają ustawieniami konkretnej mapy. [Instrukcja postaci](../Runtime/Characters/README.md) opisuje pola, a [Mechanics](../Runtime/Mechanics/README.md) wskazuje pliki z logiką gry.
+
 W Play / Runtime **I** otwiera ekwipunek, **E** otwiera najbliższą skrzynię lub rozmowę z NPC w zasięgu 2,5 jednostki. Przeciąganie przenosi przedmioty między skrzynią a EQ; **Shift+klik** przenosi je na pierwsze pasujące miejsce drugiej siatki. Brak miejsca zachowuje item w źródłowej siatce. Otwarte EQ zatrzymuje ruch. **I / Escape / X** zamyka panel, F5 wraca z podglądu do edycji. Zabranie itemków w podglądzie nie zmienia zawartości mapy w edytorze; F6 zapisuje stan gry w osobnym pliku postępu, a F9 go wczytuje.
 
 Starsze mapy wczytują się z pustym startowym EQ i bez skrzyń. Ta wersja nie zawiera skryptów ani systemu zadań.
@@ -190,7 +246,7 @@ Starsze mapy wczytują się z pustym startowym EQ i bez skrzyń. Ta wersja nie z
 
 **Monster / 9** dodaje przeciwnika. Zaznaczanie, przeciąganie, wysokość, kolizja, duplikowanie i usuwanie działają tak jak dla NPC. **Name** zmienia nazwę, **Sprite** wybiera PNG z `Editor/characters/` lub czerwony placeholder, a **Stats** otwiera ustawienia HP, obrażeń, prędkości, zasięgu wykrywania, zasięgu ataku oraz przerwy między atakami. Przyciski +/- zmieniają wartości, Ctrl+Z / Ctrl+Y cofają i ponawiają zmiany również w tym oknie. Escape / Enter / Zamknij wracają do mapy. Statystyki zapisują się w JSON; duplikat otrzymuje własny identyfikator.
 
-W **Play / Runtime** potwory wykrywają pobliskiego gracza, ścigają go, obchodzą przeszkody i atakują w zwarciu. Głęboka woda i strome zbocza blokują ich ruch. Po utracie gracza lub zbyt dużym oddaleniu wracają na miejsce początkowe. **Spacja** atakuje najbliższego potwora w zasięgu; można ją przytrzymać. Gracz zaczyna ze 100 HP, zadaje 10 obrażeń i atakuje co 0,4 s. Paski życia pokazują stan gracza i przeciwników. Pokonany Monster znika i przestaje blokować ruch. Otwarte EQ i rozmowa zatrzymują walkę obu stron.
+W **Play / Runtime** potwory wykrywają pobliskiego gracza, ścigają go, obchodzą przeszkody i atakują w zwarciu. Głęboka woda i strome zbocza blokują ich ruch. Po utracie gracza lub zbyt dużym oddaleniu wracają na miejsce początkowe. **Spacja** atakuje najbliższego potwora w zasięgu; można ją przytrzymać. Gracz domyślnie zaczyna ze 100 HP, zadaje 10 obrażeń i atakuje co 0,4 s. Stały HUD zawiera tylko pasek życia bohatera bez liczb, nazw i podpowiedzi klawiszy; przeciwnicy nie mają pasków ani etykiet. Pokonany Monster znika i przestaje blokować ruch. Otwarte EQ i rozmowa zatrzymują walkę obu stron.
 
 Po śmierci gracza **Enter** przywraca początkową mapę, przeciwników, HP oraz zawartość ekwipunków i skrzyń. **F5** nadal wraca do edycji. Ruch, obrażenia, śmierć oraz restart w podglądzie nie zmieniają mapy w edytorze. Starsze mapy wczytują się bez potworów.
 
@@ -208,6 +264,10 @@ dotnet run --project Editor -- --launch-options-interaction-test
 dotnet run --project Editor -- --new-map-interaction-test
 dotnet run --project Editor -- --world-gpu-test
 dotnet run --project Editor -- --world-interaction-test
+dotnet run --project Editor -- --workflow-interaction-test
+dotnet run --project Editor -- --landscape-interaction-test
+dotnet run --project Editor -- --fragment-test
+dotnet run --project Editor -- --fragment-interaction-test
 ```
 
 Pierwszy test sprawdza dane i operacje edycji bez okna, w tym przedmioty, skrzynie, teren, wodę i mapy 2048 × 2048. Pozostałe wymagają sesji graficznej. Pełny test interakcji zapisuje `Editor/editor-smoke.png` i obejmuje także itemki. Wariant `--inventory-interaction-test` sprawdza tylko skrzynie, przypisywanie, przeciąganie, zajęte pola, cofanie, zapis, otwieranie E/I, Shift+klik, zatrzymanie ruchu i niezależność podglądu. Mapy oraz zrzuty okien testowych są w `Editor/obj/`.
@@ -223,3 +283,9 @@ Pierwszy test sprawdza dane i operacje edycji bez okna, w tym przedmioty, skrzyn
 `--new-map-interaction-test` sprawdza pozycję Nowa mapa w hamburgerze, konfigurację trzech typów i prostokątnych rozmiarów, minimalne okno, anulowanie, walidację, potwierdzenie niezapisanej pracy, cofanie/ponawianie, zapis/wczytanie i stały mrok w budynku ze światłem. Zrzuty są w `Editor/obj/new-map-menu.png`, `new-map-building.png` i `new-map-building-play.png`. Testy danych typów są częścią `--editor-test` i `Runtime --world-test`; `--world-gpu-test` w edytorze lub Runtime sprawdza również ciemne piksele i lokalne światła w budynku i jaskini.
 
 `--world-interaction-test` sprawdza zakładki World, ustawienia środowiska, światła i dźwięki, rysowanie obszarów i wielokątów, drzwi, zaznaczanie i duplikowanie grup, bibliotekę prefabrykatów, zapis mapy oraz F6/F9 w Play. Korzysta z osobnej biblioteki w `Editor/obj/` i zapisuje `Editor/obj/world-tools.png`. Pełny test interakcji uruchamia również te sprawdzenia i testy GPU światła, cieni, zanikania oraz cache terenu.
+
+`--workflow-interaction-test` sprawdza wolną kamerę i niezależność Play, obie wyszukiwarki, prostokąt zaznaczenia, wspólne właściwości grupy, pędzel obiektów, stemple, minimapę i odzyskiwanie automatycznej kopii z potwierdzeniem niezapisanej pracy. Sprawdza też minimalne okno i zapisuje `Editor/obj/workflow-tools.png` oraz `Editor/obj/workflow-tools-small.png`. Używa osobnych kopii w `Editor/obj/test-autosaves/` i nie zmienia ustawień użytkownika. Testy danych tych narzędzi są częścią `--editor-test`.
+
+`--landscape-interaction-test` sprawdza rysowanie, przeciąganie punktów, parametry, nazwy, wyszukiwanie, usuwanie i cofanie dróg, usuwanie roślinności, zapis i Play, malowanie biomów z osobnymi ustawieniami, cofanie całych pociągnięć, erozję hydrauliczną i osypywanie, minimapę oraz małe okno. Zrzuty są w `Editor/obj/landscape-road-preview.png`, `landscape-road.png`, `landscape-biome.png`, `landscape-erosion.png` i `landscape-small.png`. Testy danych obejmują także granice mapy, zachowanie ziemi przed zaokrągleniem wysokości i powtarzalność symulacji. Test GPU blendowania sprawdza miękkie brzegi i krzywe dróg, oba rzuty, zbocza, zmianę szerokości, cofanie oraz ograniczony cache maski dla 2048 × 2048.
+
+`--fragment-test` sprawdza kopiowanie kafelków i granicznych wierzchołków, wodę i starsze materiały water, przycinanie i zachowanie dróg, dialogi i skrzynie, nowe identyfikatory, lokalne/zewnętrzne połączenia triggerów, niezależność kopii, wybór kategorii, zastępowanie zawartości, bibliotekę, limity, brak częściowych zmian po błędzie oraz cofanie/ponawianie. Te same sprawdzenia należą do `--editor-test`. `--fragment-interaction-test` testuje zaznaczanie, podgląd, wielokrotne wklejanie, opcje, bibliotekę, przenoszenie między mapami, minimapę, zapis, Play i minimalne okno. Używa osobnej biblioteki w `Editor/obj/` i zapisuje `map-fragment-selection.png`, `map-fragment-preview.png`, `map-fragment-library.png` i `map-fragment-small.png` w tym katalogu. Pełny test interakcji również obejmuje fragmenty mapy.

@@ -1,0 +1,11 @@
+{
+  "Name": "Bohater",
+  "Description": "",
+  "MaxHealth": 100,
+  "Damage": 10,
+  "WalkSpeed": 3.6,
+  "RunSpeed": 6.0,
+  "AttackRange": 1.8,
+  "AttackCooldown": 0.4,
+  "InteractionRange": 2.5
+}

@@ -9,19 +9,30 @@ static class WorldLighting
         in vec3 vertexPosition;
         in vec2 vertexTexCoord;
         in vec4 vertexColor;
+        in vec3 vertexNormal;
         uniform mat4 mvp;
         out vec2 fragTexCoord;
         out vec4 fragColor;
         out vec3 fragPosition;
+        out vec3 fragNormal;
         void main()
         {
             fragTexCoord = vertexTexCoord; fragColor = vertexColor; fragPosition = vertexPosition;
+            fragNormal = vertexNormal;
             gl_Position = mvp * vec4(vertexPosition, 1.0);
         }
         """;
     public const string FragmentPrelude = """
         #version 330
         in vec3 fragPosition;
+        in vec3 fragNormal;
+        uniform vec3 viewPosition;
+        uniform vec3 viewForward;
+        uniform vec3 fogColor;
+        uniform vec4 fogParameters;
+        uniform float visualTime;
+        uniform float wetness;
+        uniform float rainIntensity;
         uniform vec3 ambientLight;
         uniform int lightCount;
         uniform vec4 lightPositionRadius[16];
@@ -36,6 +47,51 @@ static class WorldLighting
             }
             return light;
         }
+        float visualNoise(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+        vec3 atmosphere(vec3 color)
+        {
+            if (fogParameters.z <= 0.0) return color;
+            float depth = dot(fragPosition - viewPosition, viewForward);
+            float distant = smoothstep(fogParameters.x, fogParameters.y, depth);
+            vec2 p = fragPosition.xz * 0.25 + vec2(visualTime * 0.025, visualTime * 0.012);
+            vec2 cell = floor(p), f = smoothstep(vec2(0.0), vec2(1.0), fract(p));
+            float n = mix(mix(visualNoise(cell), visualNoise(cell + vec2(1,0)), f.x),
+                mix(visualNoise(cell + vec2(0,1)), visualNoise(cell + vec2(1,1)), f.x), f.y);
+            float ground = exp(-max(0.0, fragPosition.y) / 1.8) * fogParameters.w * (0.4 + n);
+            float amount = 1.0 - exp(-(distant * 2.0 + ground) * fogParameters.z);
+            return mix(color, fogColor, clamp(amount, 0.0, 0.85));
+        }
+        vec3 wetGround(vec3 color)
+        {
+            if (wetness <= 0.0) return color;
+            vec3 n = normalize(fragNormal), v = normalize(viewPosition - fragPosition);
+            vec3 sun = normalize(vec3(-0.35, 1.0, -0.45));
+            float spec = pow(max(0.0, dot(reflect(-sun, n), v)), 28.0) * dot(ambientLight, vec3(0.3333));
+            vec3 shine = vec3(0.36, 0.42, 0.48) * spec;
+            for (int i = 0; i < lightCount; i++)
+            {
+                vec3 l = lightPositionRadius[i].xyz - fragPosition;
+                float falloff = max(0.0, 1.0 - length(l) / lightPositionRadius[i].w);
+                shine += lightColorIntensity[i].rgb * lightColorIntensity[i].w * falloff * falloff *
+                    pow(max(0.0, dot(reflect(-normalize(l), n), v)), 18.0) * 0.45;
+            }
+            return color * (1.0 - wetness * 0.20) + shine * wetness;
+        }
+        float rainRipple()
+        {
+            if (rainIntensity <= 0.0) return 0.0;
+            vec2 p = fragPosition.xz * 1.7, base = floor(p);
+            float ripples = 0.0;
+            for (int y = -1; y <= 1; y++) for (int x = -1; x <= 1; x++)
+            {
+                vec2 cell = base + vec2(x,y);
+                float seed = visualNoise(cell), age = fract(visualTime * 0.9 + seed);
+                vec2 center = cell + vec2(0.2 + seed * 0.6, 0.2 + visualNoise(cell + 17.0) * 0.6);
+                float ring = 1.0 - smoothstep(0.018, 0.045, abs(length(p - center) - age * 0.7));
+                ripples = max(ripples, ring * (1.0 - age));
+            }
+            return ripples * rainIntensity;
+        }
 
         """;
     public static Vector3 Ambient(float hour)
@@ -49,9 +105,12 @@ static class WorldLighting
     public static IEnumerable<PointLightData> AllLights(MapData map)
     {
         foreach (var light in map.Lights.Where(l => l.Enabled)) yield return light;
-        foreach (var fire in map.Objects.Where(o => o.Asset.Contains("campfire", StringComparison.OrdinalIgnoreCase) || o.Asset.Contains("torch", StringComparison.OrdinalIgnoreCase)))
+        foreach (var fire in map.Objects.Where(o => IsFire(o.Asset)))
             yield return new() { Id = fire.Id, X = fire.X, Z = fire.Z, Height = Math.Min(fire.Height, 2), Radius = 6, Intensity = .85f, R = 255, G = 155, B = 65 };
     }
+    public static bool IsFire(string id) => id.Contains("campfire", StringComparison.OrdinalIgnoreCase) ||
+        id.Contains("torch", StringComparison.OrdinalIgnoreCase) || id.Contains("ognisko", StringComparison.OrdinalIgnoreCase) ||
+        id.Contains("pochodnia", StringComparison.OrdinalIgnoreCase);
     public static PointLightData[] Nearby(MapData map, Vector3 focus) => Enabled(map)
         ? AllLights(map).OrderBy(l => Vector2.DistanceSquared(new(l.X, l.Z), new(focus.X, focus.Z))).Take(16).ToArray() : [];
     public static Vector3 Evaluate(MapData map, Vector3 point, Vector3 ambient, PointLightData[] lights)

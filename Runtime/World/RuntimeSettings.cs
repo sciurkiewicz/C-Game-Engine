@@ -7,7 +7,8 @@ sealed record RuntimeSettings
     [JsonConverter(typeof(JsonStringEnumConverter<ViewProjection>))]
     public ViewProjection Projection { get; set; }
     public float InitialDistance { get; set; } = FollowCamera.DefaultDistance;
-    public bool ShowGrid { get; set; } = true;
+    // Retained for older map files. Gameplay never renders the editor's helper grid.
+    public bool ShowGrid { get; set; }
     public int TargetFps { get; set; } = 60;
 
     public void Validate()

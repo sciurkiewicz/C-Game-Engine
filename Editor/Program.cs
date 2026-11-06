@@ -1,6 +1,11 @@
 using Raylib_cs;
 using static Raylib_cs.Raylib;
 
+if (args.Contains("--fragment-test"))
+{
+    EditorFragmentChecks.Run();
+    return;
+}
 if (args.Contains("--editor-test"))
 {
     EditorChecks.Run();
@@ -28,11 +33,17 @@ try
     bool worldTest = args.Contains("--world-interaction-test");
     bool newMapTest = args.Contains("--new-map-interaction-test");
     bool worldGpuTest = args.Contains("--world-gpu-test");
-    bool interactionTest = args.Contains("--interaction-test") || inventoryTest || dialogueLinkTest || dialogueSequenceTest || monsterTest || launchOptionsTest || worldTest || newMapTest || worldGpuTest;
+    bool workflowTest = args.Contains("--workflow-interaction-test");
+    bool landscapeTest = args.Contains("--landscape-interaction-test");
+    bool fragmentTest = args.Contains("--fragment-interaction-test");
+    bool interactionTest = args.Contains("--interaction-test") || inventoryTest || dialogueLinkTest || dialogueSequenceTest || monsterTest || launchOptionsTest || worldTest || newMapTest || worldGpuTest || workflowTest || landscapeTest || fragmentTest;
     string mapPath = interactionTest ? Path.Combine(ProjectPaths.Root, "Editor", "obj", "interaction-test.json") :
         mapArgument >= 0 ? Path.GetFullPath(args[mapArgument + 1]) : ProjectPaths.MapFile;
-    using var editor = new EditorApp(mapPath);
-    if (worldGpuTest) editor.RunWorldGpuChecks();
+    using var editor = new EditorApp(mapPath, interactionTest || args.Contains("--smoke-test"));
+    if (fragmentTest) editor.RunFragmentInteractionChecks();
+    else if (landscapeTest) editor.RunLandscapeInteractionChecks();
+    else if (workflowTest) editor.RunWorkflowInteractionChecks();
+    else if (worldGpuTest) editor.RunWorldGpuChecks();
     else if (newMapTest) editor.RunNewMapInteractionChecks();
     else if (worldTest) editor.RunWorldFeatureInteractionChecks();
     else if (launchOptionsTest) editor.RunLaunchOptionsInteractionChecks();

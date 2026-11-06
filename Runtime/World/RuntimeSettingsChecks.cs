@@ -7,7 +7,7 @@ static class RuntimeSettingsChecks
         var legacyJson = JsonNode.Parse(new MapData().Serialize())!.AsObject();
         legacyJson.Remove("Runtime");
         var legacy = MapData.Parse(legacyJson.ToJsonString());
-        Check(legacy.Runtime == new RuntimeSettings(), "older maps keep the original projection, zoom, grid and FPS");
+        Check(legacy.Runtime == new RuntimeSettings(), "older maps keep the original projection, zoom and FPS");
         var doc = new MapDocument(legacy, true);
         var settings = new RuntimeSettings { Projection = ViewProjection.Isometric, InitialDistance = 22, ShowGrid = false, TargetFps = 120 };
         doc.Checkpoint(); doc.Map.Runtime = settings with { };

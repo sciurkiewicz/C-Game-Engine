@@ -5,17 +5,18 @@ sealed partial class EditorApp
 {
     RuntimeSettings? launchOptions;
     bool launchMenuOpen, menuDismissedThisFrame;
-    Rectangle LaunchMenuBounds => new(GetScreenWidth() - 278, 48, 260, 136);
+    Rectangle LaunchMenuBounds => new(GetScreenWidth() - 278, 48, 260, 346);
     Rectangle LaunchOptionsBounds => new(GetScreenWidth() / 2 - 310, GetScreenHeight() / 2 - 250, 620, 500);
 
     void ApplyRuntimeSettings()
     {
+        EndCameraLook();
         camera.ApplySettings(document.Map.Runtime);
         camera.Snap(focus);
     }
     void ChangeProjection(ViewProjection projection)
     {
-        if (document.Map.Runtime.Projection == projection) return;
+        if (document.Map.Runtime.Projection == projection) { camera.Projection = projection; camera.Snap(focus); return; }
         document.Checkpoint();
         document.Map.Runtime.Projection = camera.Projection = projection;
         status = projection == ViewProjection.Isometric ? "Isometric view selected." : "Perspective view selected.";
@@ -25,7 +26,7 @@ sealed partial class EditorApp
         int x = GetScreenWidth() - 54;
         if (Button("", x, 8, 36, launchMenuOpen, play == null && pendingAction == null, launchMenuOpen))
         {
-            document.EndSculptStroke(); gesture = dragging = dragArmed = false;
+            EndEditorGesture(); assetSearch.Focused = false;
             launchMenuOpen = !launchMenuOpen;
         }
         for (int i = 0; i < 3; i++) DrawRectangle(x + 10, 16 + i * 6, 16, 2, play == null ? Text : Muted);
@@ -48,6 +49,16 @@ sealed partial class EditorApp
         { launchMenuOpen = false; launchOptions = document.Map.Runtime with { }; return; }
         if (Button("World tools", x + 10, y + 94, 240, false, enabled, true))
         { launchMenuOpen = false; OpenWorldTools(); }
+        if (Button("Find scene objects / Ctrl+F", x + 10, y + 136, 240, false, enabled, true))
+        { launchMenuOpen = false; OpenSceneSearch(); }
+        if (Button("Editor settings / recovery", x + 10, y + 178, 240, false, enabled, true))
+        { launchMenuOpen = false; EndEditorGesture(); editorSettingsOpen = true; }
+        if (Button(preferences.ShowMinimap ? "Minimap: ON / M" : "Minimap: OFF / M", x + 10, y + 220, 240, preferences.ShowMinimap, enabled, true))
+        { launchMenuOpen = false; ToggleMinimap(); }
+        if (Button("Free camera", x + 10, y + 262, 240, camera.IsFree, enabled, true))
+        { launchMenuOpen = false; EnterFreeCamera(); }
+        if (Button("Map fragments / Ctrl+Shift+C", x + 10, y + 304, 240, false, enabled, true))
+        { launchMenuOpen = false; BeginFragmentSelection(); }
     }
     void UpdateLaunchOptions()
     {
@@ -91,9 +102,7 @@ sealed partial class EditorApp
         if (Button("+", x + 560, y + 206, 36, false, enabled && options.InitialDistance < FollowCamera.MaxDistance, true))
             options.InitialDistance = Math.Min(FollowCamera.MaxDistance, options.InitialDistance + 1);
         Label("15-50 m. A smaller distance brings the view closer.", x + 24, y + 248, 13, Muted);
-        Label("Grid in Play / Runtime", x + 24, y + 292, 14, Text);
-        if (Button(options.ShowGrid ? "On" : "Off", x + 438, y + 282, 158, options.ShowGrid, enabled, true))
-            options.ShowGrid = !options.ShowGrid;
+        Label("Grid is available only while editing (G).", x + 24, y + 292, 13, Muted);
         Label("Frame limit", x + 24, y + 336, 14, Muted);
         int fx = x + 174;
         foreach (int fps in new[] { 30, 60, 120, 0 })

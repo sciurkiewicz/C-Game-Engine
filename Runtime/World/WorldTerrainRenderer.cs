@@ -4,12 +4,13 @@ using static Raylib_cs.Raylib;
 
 sealed partial class WorldRenderer
 {
-    void DrawTerrain(MapData map, TerrainBounds bounds, Vector3 focus, float hour)
+    void DrawTerrain(MapData map, TerrainBounds bounds, Camera3D camera, float hour, Camera3D terrainTextureView, WorldVisualFrame? visuals)
     {
         if (bounds.TileCount == 0) return;
         var blending = assets.TerrainBlending;
-        blending.Update(assets.Terrain, map, bounds);
-        WorldLighting.Apply(blending.Shader, map, hour, focus);
+        blending.Update(assets.Terrain, map, bounds, terrainTextureView);
+        WorldLighting.Apply(blending.Shader, map, hour, camera.Target);
+        WorldVisualFrame.Apply(blending.Shader, map, camera, visuals, VisualSurface.Terrain);
         assets.TerrainMeshes.Draw(map, bounds, blending);
     }
     public void DrawBrush(MapData map, Vector3 center, float radius, Color color, bool square, float? level = null)
@@ -35,7 +36,7 @@ sealed partial class WorldRenderer
         for (int i = 0; i < segments; i++) DrawLine3D(Point(i), Point(i + 1), color);
     }
     static readonly Vector3 Sun = Vector3.Normalize(new Vector3(-.35f, 1, -.45f));
-    static void DrawWater(MapData map, Camera3D camera, TerrainBounds bounds, float time, float hour)
+    void DrawWater(MapData map, Camera3D camera, TerrainBounds bounds, float time, float hour, WorldVisualFrame? visuals)
     {
         var forward = Vector3.Normalize(camera.Target - camera.Position);
         var cells = bounds.Indices(map.Width).Where(i => map.WaterMask(i) != 0)
@@ -44,6 +45,9 @@ sealed partial class WorldRenderer
         if (cells.Length == 0) return;
         var ambient = WorldLighting.Ambient(map, hour);
         var lights = WorldLighting.Nearby(map, camera.Target);
+        SetShaderValue(assets.WaterShader, GetShaderLocation(assets.WaterShader, "ambientLight"), ambient, ShaderUniformDataType.Vec3);
+        WorldVisualFrame.Apply(assets.WaterShader, map, camera, visuals, VisualSurface.Water);
+        BeginShaderMode(assets.WaterShader);
         Rlgl.DrawRenderBatchActive(); Rlgl.DisableDepthMask(); Rlgl.DisableBackfaceCulling();
         Rlgl.SetTexture(0); Rlgl.Begin((int)DrawMode.Triangles);
         foreach (int cell in cells)
@@ -66,5 +70,6 @@ sealed partial class WorldRenderer
             Rlgl.Vertex3f(triangle.C.X, triangle.C.Y, triangle.C.Z);
         }
         Rlgl.End(); Rlgl.DrawRenderBatchActive(); Rlgl.EnableBackfaceCulling(); Rlgl.EnableDepthMask();
+        EndShaderMode();
     }
 }

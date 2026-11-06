@@ -29,7 +29,7 @@ sealed partial class EditorApp
     void OpenWorldTools(string page = "Environment")
     {
         worldPage = page; worldSelectedId = null; worldListScroll = 0;
-        document.EndSculptStroke(); gesture = dragging = dragArmed = false;
+        EndEditorGesture(); assetSearch.Focused = false;
         if (page == "Prefabs") ReloadPrefabs();
     }
     void ReloadPrefabs()

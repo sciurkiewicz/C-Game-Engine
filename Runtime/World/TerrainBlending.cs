@@ -11,7 +11,9 @@ sealed class TerrainBlending : IDisposable
     Color[] cells = [];
     KeyValuePair<string, Texture2D>[] materials = [];
     readonly Dictionary<string, int> indices = [];
-    readonly int atlasLayoutLocation, lookupLocation, lookupOriginLocation, mapSizeLocation;
+    readonly RoadMaterialMask roads = new();
+    readonly int atlasLayoutLocation, lookupLocation, lookupOriginLocation, mapSizeLocation, textureAxesLocation;
+    readonly int roadMapLocation, roadWindowLocation;
 
     public TerrainBlending()
     {
@@ -23,6 +25,9 @@ sealed class TerrainBlending : IDisposable
             uniform vec4 atlasLayout; // columns, inner tile size, atlas width, atlas height
             uniform vec2 lookupOrigin;
             uniform vec2 mapSize;
+            uniform vec4 textureAxes; // reference view's horizontal right XZ and backward XZ
+            uniform sampler2D roadMap;
+            uniform vec4 roadWindow; // lookup origin XY, samples per world unit, enabled
             out vec4 finalColor;
 
             int materialAt(ivec2 cell)
@@ -36,8 +41,12 @@ sealed class TerrainBlending : IDisposable
             {
                 int columns = int(atlasLayout.x);
                 vec2 tile = vec2(id % columns, id / columns);
+                // Rotate the art around the map centre. PNG tops face away from the reference view;
+                // the unrotated coordinates below still choose materials and blend their edges.
+                vec2 offset = fragTexCoord - mapSize * 0.5;
+                vec2 uv = vec2(dot(offset, textureAxes.xy), dot(offset, textureAxes.zw)) + mapSize * 0.5;
                 // Large inked ground textures span eight tiles; material painting still uses one-tile cells.
-                vec2 pixel = tile * (atlasLayout.y + 2.0) + 1.0 + fract(fragTexCoord / 8.0) * atlasLayout.y;
+                vec2 pixel = tile * (atlasLayout.y + 2.0) + 1.0 + fract(uv / 8.0) * atlasLayout.y;
                 // Keep PNG colors; blending and scene lighting are applied separately below.
                 return texture(texture0, pixel / atlasLayout.zw).rgb;
             }
@@ -55,7 +64,19 @@ sealed class TerrainBlending : IDisposable
                 if (a != b || a != c || a != d)
                     color = mix(mix(color, materialColor(b), weight.x),
                                 mix(materialColor(c), materialColor(d), weight.x), weight.y);
-                finalColor = vec4(color * fragColor.rgb * sceneLight(), 1.0);
+                if (roadWindow.w > 0.5)
+                {
+                    vec2 pixel = (fragTexCoord - roadWindow.xy) * roadWindow.z;
+                    ivec2 size = textureSize(roadMap, 0);
+                    if (all(greaterThanEqual(pixel, vec2(0.0))) && all(lessThan(pixel, vec2(size))))
+                    {
+                        vec4 road = texelFetch(roadMap, ivec2(pixel), 0);
+                        ivec3 id = ivec3(round(road.rgb * 255.0));
+                        float coverage = texture(roadMap, pixel / vec2(size)).a;
+                        if (coverage > 0.0) color = mix(color, materialColor(id.r + id.g * 256 + id.b * 65536), coverage);
+                    }
+                }
+                finalColor = vec4(atmosphere(wetGround(color * fragColor.rgb * sceneLight())), 1.0);
             }
             """);
         if (!IsShaderValid(Shader) || Shader.Id == Rlgl.GetShaderIdDefault())
@@ -64,6 +85,9 @@ sealed class TerrainBlending : IDisposable
         lookupLocation = GetShaderLocation(Shader, "materialMap");
         lookupOriginLocation = GetShaderLocation(Shader, "lookupOrigin");
         mapSizeLocation = GetShaderLocation(Shader, "mapSize");
+        textureAxesLocation = GetShaderLocation(Shader, "textureAxes");
+        roadMapLocation = GetShaderLocation(Shader, "roadMap");
+        roadWindowLocation = GetShaderLocation(Shader, "roadWindow");
     }
 
     void UpdateAtlas(Dictionary<string, Texture2D> textures)
@@ -107,7 +131,7 @@ sealed class TerrainBlending : IDisposable
         finally { UnloadImage(image); }
     }
 
-    public void Update(Dictionary<string, Texture2D> textures, MapData map, TerrainBounds bounds)
+    public void Update(Dictionary<string, Texture2D> textures, MapData map, TerrainBounds bounds, Camera3D camera)
     {
         UpdateAtlas(textures);
         int minX = Math.Max(0, bounds.MinX - 1), minZ = Math.Max(0, bounds.MinZ - 1);
@@ -142,6 +166,13 @@ sealed class TerrainBlending : IDisposable
         if (changed) UpdateTexture(lookup, cells);
         SetShaderValue(Shader, lookupOriginLocation, new Vector2(minX, minZ), ShaderUniformDataType.Vec2);
         SetShaderValue(Shader, mapSizeLocation, new Vector2(map.Width, map.Depth), ShaderUniformDataType.Vec2);
+        var down = new Vector2(camera.Position.X - camera.Target.X, camera.Position.Z - camera.Target.Z);
+        // A top-down view gets its heading from screen-up instead of a zero-length ground direction.
+        if (down.LengthSquared() < .000001f) down = new(-camera.Up.X, -camera.Up.Z);
+        down = down.LengthSquared() > .000001f ? Vector2.Normalize(down) : Vector2.UnitY;
+        SetShaderValue(Shader, textureAxesLocation, new Vector4(down.Y, -down.X, down.X, down.Y), ShaderUniformDataType.Vec4);
+        roads.Update(map, bounds, indices, Atlas.Id);
+        SetShaderValue(Shader, roadWindowLocation, roads.Window, ShaderUniformDataType.Vec4);
     }
     public unsafe void ConfigureMaterial(ref Material material)
     {
@@ -149,9 +180,12 @@ sealed class TerrainBlending : IDisposable
         material.Maps[(int)MaterialMapIndex.Albedo].Texture = Atlas;
         material.Maps[(int)MaterialMapIndex.Metalness].Texture = lookup;
         Shader.Locs[(int)ShaderLocationIndex.MapMetalness] = lookupLocation;
+        material.Maps[(int)MaterialMapIndex.Roughness].Texture = roads.Texture;
+        Shader.Locs[(int)ShaderLocationIndex.MapRoughness] = roadMapLocation;
     }
     public void Dispose()
     {
+        roads.Dispose();
         if (lookup.Id != 0) UnloadTexture(lookup);
         if (Atlas.Id != 0) UnloadTexture(Atlas);
         UnloadShader(Shader);

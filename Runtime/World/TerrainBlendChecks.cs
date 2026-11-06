@@ -7,17 +7,26 @@ static class TerrainBlendChecks
     public static void Run(WorldAssets assets)
     {
         const int size = 512;
-        string[] ids = ["terrain/checks/red.png", "terrain/checks/green.png", "terrain/checks/blue.png", "terrain/checks/yellow.png"];
-        Color[] colors = [new(220, 40, 40, 255), new(40, 220, 40, 255), new(40, 40, 220, 255), new(220, 220, 40, 255)];
+        string[] ids = ["terrain/checks/red.png", "terrain/checks/green.png", "terrain/checks/blue.png", "terrain/checks/yellow.png", "terrain/checks/orientation.png"];
+        Color[] colors = [new(220, 40, 40, 255), new(40, 220, 40, 255), new(40, 40, 220, 255), new(220, 220, 40, 255), new(70, 70, 70, 255)];
         var added = new List<Texture2D>();
         var target = LoadRenderTexture(size, size);
         try
         {
             for (int i = 0; i < ids.Length; i++)
             {
-                var image = GenImageColor(16 + i * 8, 16 + i * 8, colors[i]);
+                int side = i == 4 ? 64 : 16 + i * 8;
+                var image = GenImageColor(side, side, colors[i]);
                 try
                 {
+                    if (i == 4)
+                    {
+                        // Distinct top, bottom, left and right markers catch rotation and mirroring on the GPU.
+                        ImageDrawRectangle(ref image, 24, 8, 16, 16, colors[0]);
+                        ImageDrawRectangle(ref image, 24, 40, 16, 16, colors[2]);
+                        ImageDrawRectangle(ref image, 8, 24, 16, 16, colors[3]);
+                        ImageDrawRectangle(ref image, 40, 24, 16, 16, colors[1]);
+                    }
                     var texture = LoadTextureFromImage(image);
                     added.Add(texture); assets.Terrain.Add(ids[i], texture);
                 }
@@ -27,10 +36,10 @@ static class TerrainBlendChecks
             var map = MapData.CreateEmpty(8, 8);
             var view = new Camera3D { Position = new(0, 12, 0), Target = Vector3.Zero, Up = -Vector3.UnitZ,
                 Projection = CameraProjection.Orthographic, FovY = 8 };
-            Image Capture()
+            Image Capture(Camera3D? terrainTextureView = null)
             {
                 BeginTextureMode(target); ClearBackground(new(38, 47, 54, 255)); BeginMode3D(view);
-                renderer.Draw(map, view, false, new Vector3(-100, 0, -100), size, size);
+                renderer.Draw(map, view, false, new Vector3(-100, 0, -100), size, size, terrainTextureView: terrainTextureView);
                 EndMode3D(); EndTextureMode();
                 var frame = LoadImageFromTexture(target.Texture); ImageFlipVertical(ref frame); return frame;
             }
@@ -165,6 +174,70 @@ static class TerrainBlendChecks
                 }
                 finally { UnloadImage(frame); }
             }
+
+            map = MapData.CreateEmpty(8, 8); Array.Fill(map.Tiles, ids[4]);
+            map.Environment.Lighting = map.Environment.Shadows = false;
+            var orientedViews = new List<(string Name, Camera3D View, Vector3 Right, Vector3 Away)>();
+            foreach (var projection in Enum.GetValues<ViewProjection>())
+            {
+                var camera = new FollowCamera(Vector3.Zero, new() { Projection = projection, InitialDistance = 15 });
+                orientedViews.Add((projection.ToString(), camera.View, camera.Right, -camera.Backward));
+            }
+            foreach (float yaw in new[] { -.65f, 2.35f })
+            {
+                var backward = new Vector3(MathF.Sin(yaw), 0, MathF.Cos(yaw));
+                var camera = new Camera3D { Position = backward * 10 + Vector3.UnitY * 9, Target = Vector3.UnitY * 1.5f,
+                    Up = Vector3.UnitY, FovY = 35, Projection = CameraProjection.Perspective };
+                orientedViews.Add(("free yaw " + yaw, camera, new(MathF.Cos(yaw), 0, -MathF.Sin(yaw)), -backward));
+            }
+            foreach (var up in new[] { -Vector3.UnitZ, -Vector3.UnitX })
+                orientedViews.Add(("top-down " + up, new Camera3D { Position = Vector3.UnitY * 12, Target = Vector3.Zero, Up = up,
+                    FovY = 8, Projection = CameraProjection.Orthographic }, Vector3.Cross(-Vector3.UnitY, up), up));
+            int meshes = -1;
+            foreach (var oriented in orientedViews)
+            {
+                view = oriented.View; frame = Capture();
+                try
+                {
+                    foreach (var sample in new[] { (Point: oriented.Away * 2, Color: colors[0], Name: "top"),
+                        (Point: -oriented.Away * 2, Color: colors[2], Name: "bottom"),
+                        (Point: -oriented.Right * 2, Color: colors[3], Name: "left"),
+                        (Point: oriented.Right * 2, Color: colors[1], Name: "right") })
+                        Check(Difference(Pixel(frame, sample.Point.X, sample.Point.Z), sample.Color) <= 8,
+                            $"PNG {sample.Name} keeps its direction relative to the camera in {oriented.Name}");
+                    if (meshes >= 0) Check(assets.TerrainMeshes.BuildCount == meshes, "camera rotation reuses terrain geometry");
+                    meshes = assets.TerrainMeshes.BuildCount;
+                }
+                finally { UnloadImage(frame); }
+            }
+            // Free navigation must leave the same PNG markers at the same world positions.
+            foreach (var projection in Enum.GetValues<ViewProjection>())
+            {
+                var reference = new FollowCamera(Vector3.Zero, new() { Projection = projection, InitialDistance = 15 });
+                foreach (var oriented in orientedViews)
+                foreach (bool moveAndZoom in new[] { false, true })
+                {
+                    view = oriented.View;
+                    if (moveAndZoom)
+                    {
+                        view.Position = view.Target + (view.Position - view.Target) * 1.1f;
+                        view.Position += new Vector3(.3f, .2f, -.4f); view.Target += new Vector3(.3f, .2f, -.4f);
+                        if (view.Projection == CameraProjection.Orthographic) view.FovY *= 1.1f;
+                    }
+                    frame = Capture(reference.View);
+                    try
+                    {
+                        foreach (var sample in new[] { (Point: -reference.Backward * 2, Color: colors[0]),
+                            (Point: reference.Backward * 2, Color: colors[2]),
+                            (Point: -reference.Right * 2, Color: colors[3]),
+                            (Point: reference.Right * 2, Color: colors[1]) })
+                            Check(Difference(Pixel(frame, sample.Point.X, sample.Point.Z), sample.Color) <= 8,
+                                $"ground stays anchored to {projection} during {oriented.Name}, moved/zoomed: {moveAndZoom}");
+                        Check(assets.TerrainMeshes.BuildCount == meshes, "free navigation reuses anchored terrain geometry");
+                    }
+                    finally { UnloadImage(frame); }
+                }
+            }
             map = TerrainChecks.CreateDemo();
             for (int z = 0; z < map.Depth; z++)
             for (int x = 0; x < map.Width; x++)
@@ -185,7 +258,8 @@ static class TerrainBlendChecks
                 }
                 finally { UnloadImage(frame); }
             }
-            Console.WriteLine("Terrain blending GPU checks passed: source PNG colors, centres, smooth edges/corners, custom materials, atlas gutters, painting/undo, batch flushes, water beds and both projections on slopes.");
+            Console.WriteLine("Terrain blending GPU checks passed: source PNG colors, both projections, world-anchored textures during free rotation/pan/zoom, top-down views, centres, smooth edges/corners, custom materials, atlas gutters, painting/undo, batch flushes, water beds and slopes.");
+            RoadGpuChecks.Run(assets);
         }
         finally
         {

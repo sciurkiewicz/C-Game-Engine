@@ -8,6 +8,7 @@ static class ProjectPaths
     public static string Root { get; } = FindRoot();
     public static string MapFile => Path.Combine(Root, "Runtime", "Maps", "world.json");
     public static string AssetRoot => Path.Combine(Root, "Editor");
+    public static string PlayerDefinitionFile => Path.Combine(Root, "Runtime", "Characters", "player.json");
     static string FindRoot()
     {
         foreach (var start in new[] { AppContext.BaseDirectory, Directory.GetCurrentDirectory() })
@@ -33,16 +34,6 @@ class SceneObject
     public bool IsDoor { get; set; }
     public bool DoorOpen { get; set; }
     public bool FadeWhenBlocking { get; set; } = true;
-    [JsonIgnore] public Vector3 Position => new(X, 0, Z);
-}
-
-sealed class PlayerStart
-{
-    public float X { get; set; }
-    public float Z { get; set; }
-    public string? Asset { get; set; }
-    public float Height { get; set; } = 1.6f;
-    public InventoryGrid Inventory { get; set; } = new();
     [JsonIgnore] public Vector3 Position => new(X, 0, Z);
 }
 
@@ -127,6 +118,7 @@ sealed partial class MapData
         ValidateMonsters();
         ValidateInventory();
         ValidateWorldFeatures();
+        ValidateRoads();
     }
     static bool ValidHeight(float h) => float.IsFinite(h) && h >= SceneObject.MinHeight && h <= SceneObject.MaxHeight;
     public static MapData CreateEmpty(int width = 48, int depth = 48, MapType type = MapType.OpenWorld)

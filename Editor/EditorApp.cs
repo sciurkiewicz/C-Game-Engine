@@ -11,10 +11,11 @@ sealed partial class EditorApp : IDisposable
     readonly WorldRenderer renderer;
     readonly MapDocument document;
     readonly string mapPath;
-    readonly FollowCamera camera = new(Vector3.Zero);
+    readonly EditorCamera camera = new(Vector3.Zero);
     readonly DialogueOverlay dialogueUi = new();
     readonly InventoryOverlay inventoryUi = new();
     readonly CombatOverlay combatUi = new();
+    readonly WorldVisualEffects visualEffects = new();
     readonly WorldAudio audio = new();
     RenderTexture2D canvas;
     Vector3 focus;
@@ -43,9 +44,9 @@ sealed partial class EditorApp : IDisposable
         Card = new(33, 44, 57, 255), Border = new(49, 64, 79, 255), Text = new(222, 233, 239, 255),
         Muted = new(140, 160, 176, 255), Accent = new(104, 217, 175, 255);
     SceneObject? Selection => document.Map.SceneEntities.FirstOrDefault(o => o.Id == selectedId);
-    bool ModalOpen => pendingAction != null || creatingMap || dialogueNpcId != null || textEdit != null || ItemEditorOpen || monsterSettingsId != null || launchOptions != null || worldPage != null || launchMenuOpen || menuDismissedThisFrame;
+    bool ModalOpen => pendingAction != null || creatingMap || dialogueNpcId != null || textEdit != null || ItemEditorOpen || monsterSettingsId != null || launchOptions != null || worldPage != null || launchMenuOpen || menuDismissedThisFrame || sceneSearchOpen || brushSettingsOpen || editorSettingsOpen || recoveryPrompt || recoveryListOpen || roadListOpen || fragmentLibraryOpen || fragmentOptionsOpen;
 
-    public EditorApp(string mapPath)
+    public EditorApp(string mapPath, bool testing = false)
     {
         this.mapPath = mapPath;
         renderer = new(assets);
@@ -68,12 +69,13 @@ sealed partial class EditorApp : IDisposable
         chosenCharacter = map.Player.Asset;
         focus = map.GroundPosition(map.Player.X, map.Player.Z);
         ApplyRuntimeSettings();
-        int missing = map.Objects.Count(o => !assets.Sprites.ContainsKey(o.Asset)) + map.Chests.Count(c => !assets.Sprites.ContainsKey(c.Asset)) + map.Tiles.Distinct().Count(t => !assets.Terrain.ContainsKey(t)) +
+        int missing = map.Objects.Count(o => !assets.Sprites.ContainsKey(o.Asset)) + map.Chests.Count(c => !assets.Sprites.ContainsKey(c.Asset)) + map.Tiles.Distinct().Count(t => !assets.Terrain.ContainsKey(t)) + map.Roads.Count(r => !assets.Terrain.ContainsKey(r.Material)) +
             map.Npcs.Count(n => n.Asset != "" && !assets.Sprites.ContainsKey(n.Asset)) +
             map.Monsters.Count(m => m.Asset != "" && !assets.Sprites.ContainsKey(m.Asset)) +
             (map.Player.Asset != null && !assets.Sprites.ContainsKey(map.Player.Asset) ? 1 : 0);
         if (missing > 0) status = $"Missing assets: {missing}. Placeholders are shown; original references are preserved.";
         if (assets.Warnings.Count > 0) status = $"Could not load {assets.Warnings.Count} images. Other assets are available.";
+        InitializeEditorPreferences(testing);
     }
     public void Run(bool smoke)
     {
@@ -88,6 +90,7 @@ sealed partial class EditorApp : IDisposable
             ResizeCanvas();
             float dt = Math.Min(GetFrameTime(), .05f);
             if (pendingAction == null) Update(dt);
+            UpdateAutosave();
             Render();
             if (smoke && ++frames == 12) WorldRenderer.Screenshot(Path.Combine(ProjectPaths.Root, "Editor", "editor-smoke.png"));
             if (smoke && frames >= 15) break;
@@ -101,7 +104,7 @@ sealed partial class EditorApp : IDisposable
         canvas = LoadRenderTexture((int)viewport.Width, (int)viewport.Height);
         SetTextureFilter(canvas.Texture, TextureFilter.Bilinear);
     }
-    bool InViewport => CheckCollisionPointRec(GetMousePosition(), viewport);
+    bool InViewport => CheckCollisionPointRec(GetMousePosition(), viewport) && !OverMinimap;
     Ray MouseRay => GetScreenToWorldRayEx(GetMousePosition() - new Vector2(viewport.X, viewport.Y), camera.View, (int)viewport.Width, (int)viewport.Height);
     Vector3? MouseTerrainPoint => TerrainGeometry.Raycast(document.Map, MouseRay);
     Vector3 Snap(Vector3 p)
@@ -114,6 +117,21 @@ sealed partial class EditorApp : IDisposable
         menuDismissedThisFrame = false;
         if (launchMenuOpen) { UpdateLaunchMenu(); return; }
         if (textEdit != null) { UpdateTextEdit(); return; }
+        if (fragmentLibraryOpen) { if (IsKeyPressed(KeyboardKey.Escape)) fragmentLibraryOpen = false; return; }
+        if (fragmentOptionsOpen) { if (IsKeyPressed(KeyboardKey.Escape)) fragmentOptionsOpen = false; return; }
+        if (roadListOpen)
+        {
+            if (IsKeyPressed(KeyboardKey.Escape)) roadListOpen = false;
+            bool control = IsKeyDown(KeyboardKey.LeftControl) || IsKeyDown(KeyboardKey.RightControl);
+            if (control && IsKeyPressed(KeyboardKey.Z)) Undo();
+            if (control && IsKeyPressed(KeyboardKey.Y)) Redo();
+            return;
+        }
+        if (recoveryPrompt || recoveryListOpen)
+        { if (IsKeyPressed(KeyboardKey.Escape)) recoveryPrompt = recoveryListOpen = false; return; }
+        if (sceneSearchOpen) { UpdateSceneSearch(); return; }
+        if (brushSettingsOpen) { if (IsKeyPressed(KeyboardKey.Escape)) brushSettingsOpen = false; return; }
+        if (editorSettingsOpen) { if (IsKeyPressed(KeyboardKey.Escape)) editorSettingsOpen = false; return; }
         if (worldPage != null) { UpdateWorldTools(); return; }
         if (launchOptions != null) { UpdateLaunchOptions(); return; }
         if (creatingMap) { UpdateNewMap(); return; }
@@ -121,16 +139,20 @@ sealed partial class EditorApp : IDisposable
         if (monsterSettingsId != null) { UpdateMonsterSettings(); return; }
         if (dialogueNpcId != null) { UpdateDialogueEditor(); return; }
         if (play == null && WorldPlacementActive) { UpdateWorldPlacement(dt); return; }
+        if (play == null && UpdateAssetSearch()) return;
         if (IsKeyPressed(KeyboardKey.F5)) TogglePlay();
         if (play != null)
         {
             if (IsKeyPressed(KeyboardKey.Escape) && !play.Dialogue.Active && !play.InventoryOpen) { TogglePlay(); return; }
             play.Update(dt, InViewport ? GetMouseWheelMove() : 0);
+            visualEffects.Update(play,dt);
             if (playFps != play.Map.Runtime.TargetFps) { playFps = play.Map.Runtime.TargetFps; SetTargetFPS(playFps); }
             audio.Update(play, dt);
             return;
         }
         bool ctrl = IsKeyDown(KeyboardKey.LeftControl) || IsKeyDown(KeyboardKey.RightControl);
+        if (FragmentShortcuts(ctrl)) return;
+        if (ctrl && IsKeyPressed(KeyboardKey.F)) { OpenSceneSearch(); return; }
         if (ctrl && IsKeyPressed(KeyboardKey.S)) Save();
         if (ctrl && IsKeyPressed(KeyboardKey.O)) Request("load");
         if (ctrl && IsKeyPressed(KeyboardKey.N)) Request("new");
@@ -139,7 +161,7 @@ sealed partial class EditorApp : IDisposable
         if (ctrl && IsKeyPressed(KeyboardKey.Y)) Redo();
         if (ctrl && IsKeyPressed(KeyboardKey.D)) Duplicate();
         if (IsKeyPressed(KeyboardKey.Delete)) Delete();
-        if (IsKeyPressed(KeyboardKey.One)) tool = EditTool.Select;
+        if (IsKeyPressed(KeyboardKey.One)) { StopFragmentTool(); tool = EditTool.Select; }
         if (IsKeyPressed(KeyboardKey.Two)) tool = EditTool.Place;
         if (IsKeyPressed(KeyboardKey.Three)) tool = EditTool.Ground;
         if (IsKeyPressed(KeyboardKey.Four)) tool = EditTool.Player;
@@ -149,35 +171,27 @@ sealed partial class EditorApp : IDisposable
         if (IsKeyPressed(KeyboardKey.Eight)) tool = EditTool.Chest;
         if (IsKeyPressed(KeyboardKey.Nine)) tool = EditTool.Monster;
         if (IsKeyPressed(KeyboardKey.G)) grid = !grid;
+        if (IsKeyPressed(KeyboardKey.M)) ToggleMinimap();
+        if (IsKeyPressed(KeyboardKey.V)) CycleEditorView();
         if (IsKeyPressed(KeyboardKey.F)) { focus = Selection is { } item ? document.Map.GroundPosition(item) : document.Map.GroundPosition(document.Map.Player.X, document.Map.Player.Z); camera.Snap(focus); }
+        if (RoadShortcuts()) return;
         if (IsKeyPressed(KeyboardKey.Escape)) { tool = EditTool.Select; selectedId = null; selectedIds.Clear(); activePrefab = null; }
-        if (!ctrl)
-        {
-            float x = (IsKeyDown(KeyboardKey.D) ? 1 : 0) - (IsKeyDown(KeyboardKey.A) ? 1 : 0);
-            float z = (IsKeyDown(KeyboardKey.S) ? 1 : 0) - (IsKeyDown(KeyboardKey.W) ? 1 : 0);
-            focus += (camera.Right * x + camera.Backward * z) * dt * 12;
-        }
-        if (InViewport)
-        {
-            camera.Zoom(GetMouseWheelMove());
-            if (IsMouseButtonDown(MouseButton.Middle) || IsMouseButtonDown(MouseButton.Right))
-            {
-                var delta = GetMouseDelta();
-                focus -= (camera.Right * delta.X + camera.Backward * delta.Y * 1.4f) * camera.Distance / viewport.Height;
-            }
-        }
-        focus = document.Map.Clamp(focus);
-        camera.Update(focus, dt);
+        if (UpdateMinimapInput()) return;
+        if (UpdateEditorCamera(dt, ctrl))
+        { document.EndSculptStroke(); gesture = dragging = dragArmed = false; marqueeStart = null; fragmentDragStart = null; return; }
+        if (UpdateFragmentTool()) return;
+        if (UpdateMarquee()) return;
         if (!IsMouseButtonDown(MouseButton.Left))
         {
             if (gesture) document.EndSculptStroke();
-            gesture = false; dragging = false; dragArmed = false;
+            gesture = false; dragging = false; dragArmed = false; roadDraggedPoint = -1;
         }
         if (!InViewport) return;
         var ground = MouseTerrainPoint;
         if (IsMouseButtonPressed(MouseButton.Left) && tool == EditTool.Select)
         {
             var hit = renderer.Pick(document.Map, camera.View, MouseRay);
+            if (hit == null || ctrl) { BeginMarquee(); return; }
             SelectForDrag(hit);
             if (hit != null && ground.HasValue)
             {
@@ -186,8 +200,10 @@ sealed partial class EditorApp : IDisposable
             }
         }
         if (!ground.HasValue || !document.Map.Contains(ground.Value.X, ground.Value.Z)) return;
+        if (UpdateLandscapeTools(ground.Value)) return;
         Vector3 point = Snap(ground.Value);
         if (PlaceActivePrefab(point)) return;
+        if (UpdateObjectBrush(ground.Value)) return;
         if (tool == EditTool.Select && dragArmed && IsMouseButtonDown(MouseButton.Left) && Selection is { } selected &&
             (dragging || Vector3.Distance(ground.Value, dragOrigin) > .12f))
         {
@@ -197,6 +213,7 @@ sealed partial class EditorApp : IDisposable
         }
         if (tool == EditTool.Place && IsMouseButtonPressed(MouseButton.Left) && chosenAsset.Length > 0)
         {
+            if (document.Map.Objects.Count >= 10000) { status = "Object limit reached (10000)."; return; }
             selectedId = document.Place(chosenAsset, point, placeHeight, placeSolid).Id;
             status = "Object placed. Switch to Select (1) to move it.";
         }
@@ -245,6 +262,15 @@ sealed partial class EditorApp : IDisposable
         }
         if (tool == EditTool.Sculpt && IsMouseButtonDown(MouseButton.Left) && (gesture || IsMouseButtonPressed(MouseButton.Left)))
         {
+            if (terrainStamp)
+            {
+                if (!IsMouseButtonPressed(MouseButton.Left)) return;
+                bool inverted = IsKeyDown(KeyboardKey.LeftShift) || IsKeyDown(KeyboardKey.RightShift);
+                document.Checkpoint();
+                document.StampTerrain(ground.Value, stampRadius, inverted ? -stampHeight : stampHeight, stampShape, stampSeed++, stampRoughness);
+                status = $"{stampShape} stamp applied. Click again to build up terrain; Shift inverts it.";
+                return;
+            }
             if (!gesture) { document.Checkpoint(); gesture = true; }
             bool reverse = IsKeyDown(KeyboardKey.LeftShift) || IsKeyDown(KeyboardKey.RightShift);
             var mode = reverse && sculptMode == SculptMode.Raise ? SculptMode.Lower : reverse && sculptMode == SculptMode.Lower ? SculptMode.Raise : sculptMode;
@@ -254,20 +280,28 @@ sealed partial class EditorApp : IDisposable
     void Render()
     {
         var view = play?.Camera.View ?? camera.View;
+        if (play != null) visualEffects.Render(renderer,play.Map,visualEffects.View(view),play.Player,(int)viewport.Width,(int)viewport.Height,play.TimeOfDay);
         BeginTextureMode(canvas);
         ClearBackground(new Color(38, 47, 54, 255));
+        if (play != null) visualEffects.Draw(new(0,0,viewport.Width,viewport.Height));
+        else
+        {
         BeginMode3D(view);
-        renderer.Draw(play?.Map ?? document.Map, view, play?.Map.Runtime.ShowGrid ?? grid, play?.Player, (int)viewport.Width, (int)viewport.Height, play?.TimeOfDay);
+        renderer.Draw(play?.Map ?? document.Map, view, play == null && grid, play?.Player, (int)viewport.Width, (int)viewport.Height, play?.TimeOfDay,
+            play == null && camera.IsFree ? 128 : 0, play == null ? camera.TerrainTextureView : null);
         if (play == null)
         {
             DrawWorldGizmos(view);
+            DrawRoadPreview();
+            DrawFragmentPreview(view);
             foreach (var selected in SelectionGroup)
                 renderer.DrawOutline(view, selected, Accent, document.Map);
             DrawCubeWires(document.Map.GroundPosition(document.Map.Player.X, document.Map.Player.Z) + new Vector3(0, .05f, 0), .8f, .1f, .8f, new Color(80, 183, 255, 255));
             if (InViewport && !ModalOpen && MouseTerrainPoint is { } ground && document.Map.Contains(ground.X, ground.Z))
             {
                 var point = Snap(ground);
-                if (tool == EditTool.Place && activePrefab == null && chosenAsset.Length > 0)
+                if (tool == EditTool.Place && objectBrush && activePrefab == null) renderer.DrawBrush(document.Map, ground, scatterRadius, Accent, false);
+                if (tool == EditTool.Place && !objectBrush && activePrefab == null && chosenAsset.Length > 0)
                     renderer.DrawSprite(view, chosenAsset, point, placeHeight, Accent, 130);
                 if (tool == EditTool.Player)
                     renderer.DrawSprite(view, chosenCharacter ?? "", point, document.Map.Player.Height, new Color(80, 183, 255, 130), 130);
@@ -277,7 +311,9 @@ sealed partial class EditorApp : IDisposable
                     renderer.DrawSprite(view, ChestData.DefaultAsset, point, ChestHeight, new Color(190, 140, 70, 130), 130);
                 if (tool == EditTool.Monster)
                     renderer.DrawSprite(view, chosenMonsterCharacter ?? "", point, 1.6f, new Color(222, 75, 86, 130), 130);
-                if (tool == EditTool.Ground)
+                if (tool == EditTool.Ground && groundMode == GroundMode.Biomes)
+                    renderer.DrawBrush(document.Map, ground, CurrentBiomeSettings.Radius, Accent, false);
+                if (tool == EditTool.Ground && groundMode == GroundMode.Paint)
                 {
                     float x = MathF.Floor(ground.X + document.Map.Width / 2f) - document.Map.Width / 2f + .5f;
                     float z = MathF.Floor(ground.Z + document.Map.Depth / 2f) - document.Map.Depth / 2f + .5f;
@@ -289,32 +325,44 @@ sealed partial class EditorApp : IDisposable
                     renderer.DrawBrush(document.Map, ground, .4f, color, false, document.Map.WaterLevel);
                     DrawLine3D(ground, new(ground.X, Math.Max(ground.Y, document.Map.WaterLevel) + .06f, ground.Z), color);
                 }
-                if (tool == EditTool.Sculpt) renderer.DrawBrush(document.Map, ground, sculptRadius, Accent, false);
+                if (tool == EditTool.Sculpt) renderer.DrawBrush(document.Map, ground, terrainErosion ? erosionRadius : terrainStamp ? stampRadius : sculptRadius, Accent, false);
             }
         }
         EndMode3D();
+        }
         EndTextureMode();
+        if (preferences.ShowMinimap && play == null) overview.Update(document.Map, assets);
         BeginDrawing();
         ClearBackground(Background);
         DrawTexturePro(canvas.Texture, new(0, 0, canvas.Texture.Width, -canvas.Texture.Height), viewport, Vector2.Zero, 0, Color.White);
+        DrawMarquee();
         DrawHeader();
         DrawPalette();
         DrawInspector();
+        DrawMinimap();
         DrawRectangle(0, GetScreenHeight() - Bottom, GetScreenWidth(), Bottom, Panel);
         Label(status, 16, GetScreenHeight() - 22, 13, Muted, GetScreenWidth() - 440);
         Label($"{document.Map.Objects.Count} obj / {document.Map.Npcs.Count} NPC / {document.Map.Chests.Count} chest / {document.Map.Monsters.Count} monster | {document.Map.Width} x {document.Map.Depth}", GetScreenWidth() - 422, GetScreenHeight() - 22, 12, Accent);
         DrawRectangle(Left + 12, Top + 12, 154, 25, new Color(17, 23, 31, 220));
-        Label(play != null ? "PLAYTEST  /  F5 to stop" : camera.Projection == ViewProjection.Isometric ? "ISOMETRIC  /  2.5D" : "PERSPECTIVE  /  2.5D", Left + 20, Top + 19, 12, play != null ? Accent : Text);
+        Label(play != null ? "PLAYTEST  /  F5 to stop" : camera.IsFree ? "FREE CAMERA / V" : camera.Projection == ViewProjection.Isometric ? "ISOMETRIC  /  2.5D" : "PERSPECTIVE  /  2.5D", Left + 20, Top + 19, 12, play != null ? Accent : Text);
         if (play != null && pendingAction == null) { combatUi.Draw(play, viewport); dialogueUi.Draw(play, viewport); inventoryUi.Draw(play, viewport); }
         if (monsterSettingsId != null) DrawMonsterSettings();
         if (ItemEditorOpen) DrawItemEditor();
         if (dialogueNpcId != null) DrawDialogueEditor();
         if (creatingMap) DrawNewMap();
         if (worldPage != null) DrawWorldTools();
+        if (roadListOpen) DrawRoadList();
+        if (fragmentLibraryOpen) DrawFragmentLibrary();
+        if (fragmentOptionsOpen) DrawFragmentOptions();
         if (textEdit != null) DrawTextEdit();
         if (launchOptions != null) DrawLaunchOptions();
+        if (sceneSearchOpen) DrawSceneSearch();
+        if (brushSettingsOpen) DrawBrushSettings();
+        if (editorSettingsOpen) DrawEditorSettings();
+        if (recoveryPrompt || recoveryListOpen) DrawRecovery();
         if (launchMenuOpen) DrawLaunchMenu();
         if (pendingAction != null) DrawConfirmation();
+        if (ModalOpen) EndCameraLook();
         EndDrawing();
     }
     void DrawHeader()
@@ -325,14 +373,14 @@ sealed partial class EditorApp : IDisposable
         if (Button("+ New map", Left + 14, 8, 112, true, play == null)) Request("new");
         Label(Path.GetFileName(mapPath) + (document.Dirty ? "  /  unsaved" : "  /  saved"), Left + 138, 17, 14, Text, GetScreenWidth() - Left - 486);
         if (Button("World", GetScreenWidth() - 330, 8, 84, false, play == null)) OpenWorldTools();
-        if (Button(camera.Projection == ViewProjection.Isometric ? "View: Isometric" : "View: Perspective",
+        if (Button(camera.IsFree ? "View: Free camera" : camera.Projection == ViewProjection.Isometric ? "View: Isometric" : "View: Perspective",
             GetScreenWidth() - 236, 8, 172, false, play == null))
-            ChangeProjection(camera.Projection == ViewProjection.Isometric ? ViewProjection.Perspective : ViewProjection.Isometric);
+            CycleEditorView();
         DrawLaunchMenuButton();
         int x = 16, width = ToolbarToolWidth;
         foreach (var t in Enum.GetValues<EditTool>())
         {
-            if (Button($"{(int)t + 1}  {t}", x, 46, width, tool == t, play == null)) { tool = t; activePrefab = null; }
+            if (Button($"{(int)t + 1}  {t}", x, 46, width, tool == t, play == null)) { StopFragmentTool(); tool = t; activePrefab = null; }
             x += width + 2;
         }
         if (Button("Undo", x + 8, 46, 65, false, play == null && document.CanUndo)) Undo();
@@ -346,6 +394,7 @@ sealed partial class EditorApp : IDisposable
     void DrawPalette()
     {
         DrawRectangle(0, Top, Left, GetScreenHeight() - Top - Bottom, Panel);
+        if (DrawFragmentPalette()) return;
         Label(tool == EditTool.Ground ? "GROUND MATERIALS" : tool == EditTool.Player ? "PLAYER" : tool == EditTool.NPC ? "NPC" : tool == EditTool.Monster ? "MONSTER" : tool == EditTool.Chest ? "CHESTS" : tool == EditTool.Sculpt ? "TERRAFORM" : tool == EditTool.Water ? "3D WATER" : "ASSET LIBRARY", 16, 108, 15, Text);
         if (tool == EditTool.Chest)
         {
@@ -363,15 +412,7 @@ sealed partial class EditorApp : IDisposable
         }
         if (tool == EditTool.Sculpt)
         {
-            int sy = 146;
-            foreach (var mode in Enum.GetValues<SculptMode>())
-            {
-                if (Button(mode.ToString(), 16, sy, 218, sculptMode == mode, play == null)) sculptMode = mode;
-                sy += 42;
-            }
-            Label("Hold LMB to sculpt the surface.", 16, 328, 13, Muted);
-            Label("Shift swaps Raise / Lower.", 16, 350, 13, Muted);
-            Label("Elevation step: 0.25 m.", 16, 382, 13, Accent);
+            DrawSculptPalette();
             return;
         }
         if (tool == EditTool.Water)
@@ -394,14 +435,15 @@ sealed partial class EditorApp : IDisposable
             Label(monster ? "Click the map to place a monster." : npc ? "Click the map to place an NPC." : "Click the map to set the spawn.", 16, 187, 13, Muted);
             Label("Add PNG files to", 16, 212, 13, Muted);
             Label("Editor/characters", 16, 231, 13, Accent);
-            var characters = assets.Sprites.Values.Where(s => s.Id.StartsWith("characters/")).ToArray();
-            ScrollPalette(ref characterScroll, 264, characters.Length * 36);
-            int cy = 268 - characterScroll;
-            BeginScissorMode(0, 264, Left, GetScreenHeight() - Bottom - 264);
+            DrawSearchField(assetSearch, AssetSearchBounds, "Search graphics...");
+            var characters = assets.Sprites.Values.Where(s => s.Id.StartsWith("characters/") && SearchInput.Matches(assetSearch.Value, s.Name, s.Id)).ToArray();
+            ScrollPalette(ref characterScroll, 304, characters.Length * 36);
+            int cy = 308 - characterScroll;
+            BeginScissorMode(0, 304, Left, GetScreenHeight() - Bottom - 304);
             foreach (var sprite in characters)
             {
                 if (Button(sprite.Name, 16, cy, 218, character == sprite.Id,
-                    play == null && GetMouseY() >= 264 && GetMouseY() < GetScreenHeight() - Bottom)) ChangeActorCharacter(sprite.Id, tool);
+                    play == null && GetMouseY() >= 304 && GetMouseY() < GetScreenHeight() - Bottom)) ChangeActorCharacter(sprite.Id, tool);
                 cy += 36;
             }
             EndScissorMode();
@@ -409,16 +451,18 @@ sealed partial class EditorApp : IDisposable
         }
         if (tool == EditTool.Ground)
         {
-            Label("Hold LMB to paint tiles", 16, 138, 13, Muted);
-            var materials = assets.Terrain.Where(t => t.Key != "water").ToArray();
-            ScrollPalette(ref groundScroll, 164, (materials.Length + 1) / 2 * 120);
-            BeginScissorMode(0, 164, Left, GetScreenHeight() - Bottom - 164);
+            if (DrawGroundModes()) return;
+            DrawSearchField(assetSearch, AssetSearchBounds, "Search materials...");
+            var materials = assets.Terrain.Where(t => t.Key != "water" && SearchInput.Matches(assetSearch.Value, Path.GetFileNameWithoutExtension(t.Key), t.Key)).ToArray();
+            ScrollPalette(ref groundScroll, 204, (materials.Length + 1) / 2 * 120);
+            BeginScissorMode(0, 204, Left, GetScreenHeight() - Bottom - 204);
             int index = 0;
             foreach (var (id, texture) in materials)
             {
-                int x = 16 + index % 2 * 116, y = 168 + index / 2 * 120 - groundScroll;
-                if (AssetCard(texture, Path.GetFileNameWithoutExtension(id), x, y, chosenTerrain == id,
-                    play == null && GetMouseY() >= 164 && GetMouseY() < GetScreenHeight() - Bottom)) chosenTerrain = id;
+                int x = 16 + index % 2 * 116, y = 208 + index / 2 * 120 - groundScroll;
+                if (AssetCard(texture, Path.GetFileNameWithoutExtension(id), x, y, GroundMaterial == id,
+                    play == null && GetMouseY() >= 204 && GetMouseY() < GetScreenHeight() - Bottom))
+                { if (groundMode == GroundMode.Roads) roadMaterial = id; else chosenTerrain = id; }
                 index++;
             }
             EndScissorMode();
@@ -427,20 +471,22 @@ sealed partial class EditorApp : IDisposable
         if (Button("<", 16, 136, 28, false, play == null)) { category = (category + categories.Length - 1) % categories.Length; scroll = 0; }
         Label(categories[category].ToUpperInvariant(), 60, 145, 14, Accent);
         if (Button(">", 206, 136, 28, false, play == null)) { category = (category + 1) % categories.Length; scroll = 0; }
-        var items = assets.Sprites.Values.Where(s => s.Id.StartsWith("objects/") && (category == 0 || s.Category == categories[category]))
+        DrawSearchField(assetSearch, AssetSearchBounds, "Search graphics...");
+        var items = assets.Sprites.Values.Where(s => s.Id.StartsWith("objects/") && (category == 0 || s.Category == categories[category]) && SearchInput.Matches(assetSearch.Value, s.Name, s.Id))
             .OrderBy(s => s.Id.Contains("/trees/") ? 0 : 1).ThenBy(s => s.Id).ToArray();
-        int available = GetScreenHeight() - Bottom - 188;
-        if (GetMouseX() < Left && GetMouseY() > 174 && !ModalOpen)
+        int available = GetScreenHeight() - Bottom - 216;
+        if (GetMouseX() < Left && GetMouseY() > 216 && !ModalOpen)
             scroll = Math.Clamp(scroll - (int)(GetMouseWheelMove() * 45), 0, Math.Max(0, (items.Length + 1) / 2 * 120 - available));
         scroll = Math.Clamp(scroll, 0, Math.Max(0, (items.Length + 1) / 2 * 120 - available));
-        BeginScissorMode(0, 176, Left, available);
+        BeginScissorMode(0, 216, Left, available);
         for (int i = 0; i < items.Length; i++)
         {
-            int x = 16 + i % 2 * 116, y = 184 + i / 2 * 120 - scroll;
-            if (y + 112 < 176 || y > GetScreenHeight() - Bottom) continue;
-            if (AssetCard(items[i].Texture, items[i].Name, x, y, chosenAsset == items[i].Id,
-                play == null && GetMouseY() >= 176 && GetMouseY() < GetScreenHeight() - Bottom)) Choose(items[i]);
+            int x = 16 + i % 2 * 116, y = 224 + i / 2 * 120 - scroll;
+            if (y + 112 < 216 || y > GetScreenHeight() - Bottom) continue;
+            if (AssetCard(items[i].Texture, items[i].Name, x, y, objectBrush && scatterAssets.Count > 0 ? scatterAssets.Contains(items[i].Id) : chosenAsset == items[i].Id,
+                play == null && GetMouseY() >= 216 && GetMouseY() < GetScreenHeight() - Bottom)) ChoosePaletteAsset(items[i]);
         }
+        if (items.Length == 0) Label("No matching graphics.", 16, 236, 13, Muted);
         EndScissorMode();
         DrawLine(Left - 1, Top, Left - 1, GetScreenHeight() - Bottom, Border);
     }
@@ -462,7 +508,10 @@ sealed partial class EditorApp : IDisposable
             Label("Testing a copy of this map.", x, 374, 13, Muted);
             return;
         }
-        if (tool == EditTool.Ground)
+        if (FragmentToolActive) DrawFragmentInspector(x);
+        else if (tool == EditTool.Ground && groundMode == GroundMode.Roads) DrawRoadInspector(x);
+        else if (tool == EditTool.Ground && groundMode == GroundMode.Biomes) DrawBiomeInspector(x);
+        else if (tool == EditTool.Ground)
         {
             Label("Material: " + Path.GetFileNameWithoutExtension(chosenTerrain), x, 147, 14, Accent, 225);
             Label("Brush size", x, 185, 13, Muted);
@@ -478,15 +527,25 @@ sealed partial class EditorApp : IDisposable
             if (!WorldRenderer.CanWalk(document.Map, document.Map.GroundPosition(document.Map.Player.X, document.Map.Player.Z))) Label("Spawn blocked: object / terrain / water", x, 272, 12, new Color(255, 177, 100, 255));
             if (Button("Starting inventory", x, 304, 218)) OpenItemEditor(null);
         }
+        else if (tool == EditTool.Sculpt && terrainErosion) DrawErosionInspector(x);
         else if (tool == EditTool.Sculpt)
         {
-            Label("Mode: " + sculptMode, x, 147, 16, Accent);
-            Stepper("Radius (metres)", sculptRadius, x, 184, v => sculptRadius = Math.Clamp(v, 1, 16), 1);
-            Stepper("Strength", sculptStrength, x, 244, v => sculptStrength = Math.Clamp(v, .25f, 12), .25f);
-            if (sculptMode == SculptMode.Flatten)
+            Label(terrainStamp ? "Stamp: " + stampShape : "Mode: " + sculptMode, x, 147, 16, Accent);
+            if (terrainStamp)
+            {
+                Stepper("Radius (metres)", stampRadius, x, 184, v => stampRadius = Math.Clamp(v, 1, 64), 1);
+                Stepper("Height per click (m)", stampHeight, x, 244, v => stampHeight = Math.Clamp(v, .25f, 32), .25f);
+                Stepper("Shape variation", stampRoughness, x, 304, v => stampRoughness = Math.Clamp(v, 0, 1), .05f);
+            }
+            else
+            {
+                Stepper("Radius (metres)", sculptRadius, x, 184, v => sculptRadius = Math.Clamp(v, 1, 16), 1);
+                Stepper("Strength", sculptStrength, x, 244, v => sculptStrength = Math.Clamp(v, .25f, 12), .25f);
+            }
+            if (!terrainStamp && sculptMode == SculptMode.Flatten)
                 Stepper("Target elevation", flattenHeight, x, 304, v => flattenHeight = MapData.SnapElevation(Math.Clamp(v, MapData.MinElevation, MapData.MaxElevation)), .25f);
             if (MouseTerrainPoint is { } ground) Label($"Elevation: {MapData.SnapElevation(ground.Y):0.00} m", x, 382, 14, Text);
-            Label("Step: 0.25 m / one stroke = undo.", x, 414, 13, Muted);
+            Label(terrainStamp ? "One click = one undo step." : "Step: 0.25 m / one stroke = undo.", x, 414, 13, Muted);
         }
         else if (tool == EditTool.Water)
         {
@@ -504,7 +563,15 @@ sealed partial class EditorApp : IDisposable
             Label(activePrefab?.Name ?? Path.GetFileNameWithoutExtension(chosenAsset), x, 148, 16, Accent, 220);
             Stepper("Height", placeHeight, x, 190, v => placeHeight = Math.Clamp(v, SceneObject.MinHeight, SceneObject.MaxHeight), .25f);
             if (Button(placeSolid ? "Collision: ON" : "Collision: OFF", x, 248, 218, placeSolid)) placeSolid = !placeSolid;
-            Label("Click to place. Repeat freely.", x, 294, 13, Muted);
+            if (Button(objectBrush ? "Object brush: ON" : "Object brush: OFF", x, 294, 218, objectBrush, activePrefab == null))
+            { EndEditorGesture(); objectBrush = !objectBrush; }
+            if (objectBrush && activePrefab == null)
+            {
+                if (Button("Brush settings...", x, 334, 218)) OpenBrushSettings();
+                Label($"Radius: {scatterRadius:0.#} m / {scatterCount} per dab", x, 382, 13, Muted);
+                Label("Ctrl+click graphics to mix them.", x, 408, 12, Accent);
+            }
+            else Label("Click to place. Repeat freely.", x, 350, 13, Muted);
         }
         else if (tool == EditTool.NPC)
         {
@@ -528,6 +595,7 @@ sealed partial class EditorApp : IDisposable
             Label("Chases and attacks the player.", x, 235, 13, Text);
             if (Selection is MonsterData monster && Button("Edit selected monster stats", x, 273, 218)) monsterSettingsId = monster.Id;
         }
+        else if (SelectionGroup is { Length: > 1 } group) DrawGroupInspector(x, group);
         else if (Selection is { } selected)
         {
             Label(selected is NpcData actor ? actor.Name : selected is MonsterData namedMonster ? namedMonster.Name : selected is ChestData namedChest ? namedChest.Name : Path.GetFileNameWithoutExtension(selected.Asset), x, 148, 16, Accent, 220);
@@ -566,14 +634,17 @@ sealed partial class EditorApp : IDisposable
             Label("Nothing selected", x, 150, 16, Muted);
             Label("Click an object to select it.", x, 183, 13, Muted);
             Label("Drag to change its position.", x, 205, 13, Muted);
+            if (Button("Copy map area...", x, 245, 218)) BeginFragmentSelection();
+            if (Button("Fragment library...", x, 287, 218)) OpenFragmentLibrary();
         }
         int y = Math.Max(454, GetScreenHeight() - 252);
         DrawLine(x, y, x + 220, y, Border);
         if (Button(grid ? "Grid: ON" : "Grid: OFF", x, y + 16, 104, grid)) grid = !grid;
         if (Button(snap ? "Snap: 0.5" : "Snap: OFF", x + 112, y + 16, 106, snap)) snap = !snap;
-        Label("NAVIGATION", x, y + 68, 12, Accent);
-        Label("WASD / RMB drag: pan", x, y + 92, 13, Muted);
-        Label("Wheel: zoom   F: focus", x, y + 114, 13, Muted);
+        if (Button("Find objects", x, y + 58, 104)) OpenSceneSearch();
+        if (Button("Minimap / M", x + 112, y + 58, 106, preferences.ShowMinimap)) ToggleMinimap();
+        Label(camera.IsFree ? "RMB: look / WASD / Q E: fly" : "WASD / RMB drag: pan", x, y + 96, 12, Muted);
+        Label(camera.IsFree ? $"Wheel: move / RMB+wheel: speed {camera.Speed:0.#}" : "Wheel: zoom   F: focus", x, y + 116, 12, Muted);
         Label("Ctrl+S: save   Ctrl+O: load", x, y + 136, 13, Muted);
         Label("Ctrl+Z / Ctrl+Y: undo / redo", x, y + 158, 13, Muted);
         Label("Delete: remove   G: grid", x, y + 180, 13, Muted);
@@ -649,6 +720,7 @@ sealed partial class EditorApp : IDisposable
     }
     void Request(string action)
     {
+        EndEditorGesture(); assetSearch.Focused = false;
         if (action == "new") { OpenNewMap(); return; }
         if (document.Dirty) pendingAction = action;
         else Complete(action);
@@ -656,19 +728,26 @@ sealed partial class EditorApp : IDisposable
     void Complete(string action)
     {
         if (action == "exit") { exit = true; return; }
+        if (action == "recover")
+        {
+            try { ApplyRecovery(); }
+            catch (Exception ex) when (ex is IOException or InvalidDataException or System.Text.Json.JsonException or UnauthorizedAccessException)
+            { status = "Recovery failed: " + ex.Message; }
+            return;
+        }
         if (action == "new")
         {
             document.New(newWidth, newDepth, newMapType); selectedId = null; chosenCharacter = null; focus = Vector3.Zero;
             selectedIds.Clear(); activePrefab = null;
             drawingTrigger = false; drawingColliderId = null; triggerStart = triggerEnd = null; colliderPoints.Clear();
             chosenTerrain = document.Map.Tiles[0]; tool = EditTool.Select; groundScroll = 0;
-            gesture = dragging = dragArmed = false;
+            EndEditorGesture(); ResetRoadDraft(); StopFragmentTool(true); autosaveSnapshot = null;
             ApplyRuntimeSettings(); status = $"Nowa mapa: {MapTypeName(newMapType)}, {newWidth} x {newDepth}.";
             return;
         }
         try
         {
-            document.Load(mapPath); selectedId = null; chosenCharacter = document.Map.Player.Asset;
+            document.Load(mapPath); EndEditorGesture(); ResetRoadDraft(); StopFragmentTool(true); autosaveSnapshot = null; selectedId = null; chosenCharacter = document.Map.Player.Asset;
             selectedIds.Clear(); activePrefab = null;
             focus = document.Map.GroundPosition(document.Map.Player.X, document.Map.Player.Z); ApplyRuntimeSettings(); status = "Map loaded.";
         }
@@ -676,24 +755,35 @@ sealed partial class EditorApp : IDisposable
     }
     void Undo()
     {
+        EndEditorGesture();
         var settings = document.Map.Runtime;
         document.Undo(); chosenCharacter = document.Map.Player.Asset; gesture = dragging = dragArmed = false;
         if (settings != document.Map.Runtime) ApplyRuntimeSettings();
     }
     void Redo()
     {
+        EndEditorGesture();
         var settings = document.Map.Runtime;
         document.Redo(); chosenCharacter = document.Map.Player.Asset; gesture = dragging = dragArmed = false;
         if (settings != document.Map.Runtime) ApplyRuntimeSettings();
     }
     void TogglePlay()
     {
-        document.EndSculptStroke(); gesture = dragging = dragArmed = false;
+        EndEditorGesture(); assetSearch.Focused = false;
+        StopFragmentTool();
         if (play != null) { play = null; audio.Stop(); SetTargetFPS(60); status = "Returned to editing."; }
         else
         {
-            play = new(document.Map, mapPath, GameProgress.SavePath(mapPath, true)); playFps = play.Map.Runtime.TargetFps; SetTargetFPS(playFps);
-            status = "Playtest: WASD to move, Space to attack, F5 or Escape to return.";
+            try
+            {
+                var character = PlayerDefinition.Load(ProjectPaths.PlayerDefinitionFile);
+                var graphics = GraphicsSettings.Load(GraphicsSettings.FilePath);
+                play = new(document.Map, mapPath, GameProgress.SavePath(mapPath, true), character); playFps = play.Map.Runtime.TargetFps; SetTargetFPS(playFps);
+                visualEffects.Configure(graphics,play);
+                status = "Playtest: WASD to move, Space to attack, F5 or Escape to return.";
+            }
+            catch (Exception ex) when (ex is IOException or InvalidDataException or UnauthorizedAccessException)
+            { status = "Cannot start Play: " + ex.Message; }
         }
     }
     void DrawConfirmation()
@@ -744,6 +834,12 @@ sealed partial class EditorApp : IDisposable
     }
     public void Dispose()
     {
+        EndCameraLook();
+        if (autosaveTask != null)
+            try { autosaveTask.GetAwaiter().GetResult(); }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException) { Console.Error.WriteLine("Automatic save failed: " + ex.Message); }
+        overview.Dispose();
+        visualEffects.Dispose();
         audio.Dispose();
         if (canvas.Id != 0) UnloadRenderTexture(canvas);
         assets.Dispose();

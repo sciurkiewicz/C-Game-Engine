@@ -1,6 +1,24 @@
 ﻿using Raylib_cs;
 using static Raylib_cs.Raylib;
 
+if (args.Contains("--graphics-test"))
+{
+    GraphicsChecks.Run();
+    return;
+}
+
+if (args.Contains("--narrative-test"))
+{
+    NarrativeChecks.Run();
+    return;
+}
+
+if (args.Contains("--character-test"))
+{
+    CharacterChecks.Run();
+    return;
+}
+
 if (args.Contains("--world-test"))
 {
     WorldFeatureChecks.Run();
@@ -44,7 +62,7 @@ if (args.Contains("--billboard-test"))
 }
 
 SetConfigFlags(ConfigFlags.ResizableWindow | ConfigFlags.Msaa4xHint);
-InitWindow(1280, 800, "Wildwood | Runtime");
+InitWindow(1280, 800, "Wildwood");
 if (!IsWindowReady())
 {
     Console.Error.WriteLine("Cannot open Runtime: no graphical display or OpenGL context is available.");
@@ -56,6 +74,11 @@ SetTargetFPS(60);
 try
 {
     using var assets = new WorldAssets();
+    if (args.Contains("--graphics-gpu-test"))
+    {
+        GraphicsGpuChecks.Run(assets);
+        return;
+    }
     if (args.Contains("--world-gpu-test"))
     {
         WorldFeatureGpuChecks.Run(assets);
@@ -75,53 +98,21 @@ try
     if (mapArgument >= 0 && mapArgument + 1 >= args.Length)
         throw new ArgumentException("--map requires a JSON file path.");
     string mapPath = mapArgument >= 0 ? Path.GetFullPath(args[mapArgument + 1]) : ProjectPaths.MapFile;
-    var map = File.Exists(mapPath) ? MapData.Load(mapPath) : mapArgument >= 0
-        ? throw new FileNotFoundException("Map not found.", mapPath) : MapData.CreateDemo(assets.Sprites.Keys);
-    var session = new PlaySession(map, mapPath);
-    using var audio = new WorldAudio();
-    SetTargetFPS(map.Runtime.TargetFps);
-    int activeFps = map.Runtime.TargetFps;
-    var renderer = new WorldRenderer(assets);
-    var dialogueUi = new DialogueOverlay();
-    var inventoryUi = new InventoryOverlay();
-    var combatUi = new CombatOverlay();
-    if (args.Contains("--close")) session.Camera.Zoom(100);
-    if (args.Contains("--far")) session.Camera.Zoom(-100);
-    session.Camera.Snap(session.Player);
-    int frames = 0;
-    bool inventorySmoke = args.Contains("--inventory-smoke-test");
-    bool monsterSmoke = args.Contains("--monster-smoke-test");
-    bool smoke = args.Contains("--smoke-test") || args.Contains("--dialogue-smoke-test") || inventorySmoke || monsterSmoke;
-    if (args.Contains("--dialogue-smoke-test") && session.Map.Npcs.FirstOrDefault() is { } smokeNpc)
-        session.Dialogue.Begin(smokeNpc);
-    if (inventorySmoke)
+    if (args.Contains("--menu-interaction-test"))
     {
-        if (session.Map.Chests.FirstOrDefault() is { } chest)
-        {
-            if (!session.OpenChest(chest)) throw new ArgumentException("Inventory smoke test requires the first chest to be near the player spawn.");
-        }
-        else session.ToggleInventory();
+        using var checks = new GameApp(assets, Path.Combine(ProjectPaths.Root, "Runtime", "obj", "menu-test.json"), true);
+        checks.RunMenuInteractionChecks();
+        return;
     }
-    while (!WindowShouldClose())
+    if (args.Contains("--narrative-interaction-test"))
     {
-        if (IsKeyPressed(KeyboardKey.Escape) && !session.Dialogue.Active && !session.InventoryOpen) break;
-        session.Update(Math.Min(GetFrameTime(), .05f), GetMouseWheelMove());
-        if (activeFps != session.Map.Runtime.TargetFps) { activeFps = session.Map.Runtime.TargetFps; SetTargetFPS(activeFps); }
-        audio.Update(session, Math.Min(GetFrameTime(), .05f));
-        BeginDrawing();
-        ClearBackground(new Color(38, 47, 54, 255));
-        BeginMode3D(session.Camera.View);
-        renderer.Draw(session.Map, session.Camera.View, session.Map.Runtime.ShowGrid, session.Player, timeOfDay: session.TimeOfDay);
-        EndMode3D();
-        combatUi.Draw(session, new(0, 0, GetScreenWidth(), GetScreenHeight()));
-        dialogueUi.Draw(session, new(0, 0, GetScreenWidth(), GetScreenHeight()));
-        inventoryUi.Draw(session, new(0, 0, GetScreenWidth(), GetScreenHeight()));
-        EndDrawing();
-        if (smoke && ++frames == 12) WorldRenderer.Screenshot(inventorySmoke || monsterSmoke
-            ? Path.Combine(ProjectPaths.Root, "Editor", "obj", monsterSmoke ? "monster-runtime.png" : "inventory-runtime.png")
-            : Path.Combine(ProjectPaths.Root, "wildwood-smoke.png"));
-        if (smoke && frames >= 15) break;
+        string directory = Path.Combine(Path.GetTempPath(), "wildwood-narrative-ui-" + Guid.NewGuid().ToString("N"));
+        using var checks = new GameApp(assets, Path.Combine(directory, "map.json"), true, Path.Combine(directory, "intro.json"), new GraphicsSettings { Enabled = false });
+        checks.RunNarrativeInteractionChecks();
+        return;
     }
+    using var game = new GameApp(assets, mapPath, mapArgument >= 0);
+    game.Run(args);
 }
 catch (Exception ex) when (ex is IOException or InvalidDataException or System.Text.Json.JsonException or UnauthorizedAccessException or ArgumentException)
 {

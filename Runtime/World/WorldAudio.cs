@@ -82,12 +82,13 @@ sealed class WorldAudio : IDisposable
         }
         return stream.ToArray();
     }
-    public void Update(PlaySession play, float dt)
+    public void Update(PlaySession play, float dt, float masterVolume = 1)
     {
         if (!play.Map.Environment.Audio || !EnsureDevice()) { Stop(); return; }
+        SetMasterVolume(Math.Clamp(masterVolume, 0, 1));
         if (!ReferenceEquals(session, play)) { Stop(); session = play; previousPlayer = play.Player; stepDistance = 0; }
         var sources = play.Map.Sounds.Where(s => s.Enabled).Select(s => (s.Id, s.Clip, Position: play.Map.GroundPosition(s.X, s.Z), s.Radius, s.Volume)).ToList();
-        foreach (var fire in play.Map.Objects.Where(o => o.Asset.Contains("campfire", StringComparison.OrdinalIgnoreCase) || o.Asset.Contains("torch", StringComparison.OrdinalIgnoreCase)))
+        foreach (var fire in play.Map.Objects.Where(o => WorldLighting.IsFire(o.Asset)))
             sources.Add(("fire/" + fire.Id, "fire", play.Map.GroundPosition(fire), 12, .65f));
         Vector3? water = null; float nearest = float.MaxValue;
         int px = (int)(play.Player.X + play.Map.Width / 2f), pz = (int)(play.Player.Z + play.Map.Depth / 2f);

@@ -20,31 +20,21 @@ sealed class WorldAssets : IDisposable
     public List<string> Warnings { get; } = [];
     public Shader SpriteShader { get; }
     public Shader ShadowShader { get; }
+    public Shader WaterShader { get; }
     TerrainBlending? terrainBlending;
     public TerrainBlending TerrainBlending => terrainBlending ??= new();
     TerrainChunkCache? terrainMeshes;
     public TerrainChunkCache TerrainMeshes => terrainMeshes ??= new();
     public WorldAssets()
     {
-        SpriteShader = LoadShaderFromMemory(WorldLighting.VertexShader, WorldLighting.FragmentPrelude + """
-            in vec2 fragTexCoord;
-            in vec4 fragColor;
-            uniform sampler2D texture0;
-            uniform vec4 colDiffuse;
-            out vec4 finalColor;
-            void main()
-            {
-                vec4 color = texture(texture0, fragTexCoord) * colDiffuse * fragColor;
-                // Invisible PNG pixels must not write depth and cut holes in the water pass.
-                if (color.a <= 0.01) discard;
-                finalColor = vec4(color.rgb * sceneLight(), color.a);
-            }
-            """);
+        SpriteShader = LoadShaderFromMemory(GraphicsShaders.SpriteVertex, WorldLighting.FragmentPrelude + GraphicsShaders.SpriteFragment);
         if (!IsShaderValid(SpriteShader) || SpriteShader.Id == Rlgl.GetShaderIdDefault())
             throw new InvalidOperationException("Cannot load sprite transparency shader.");
         ShadowShader = LoadShaderFromMemory(WorldLighting.VertexShader, WorldShadows.FragmentShader);
         if (!IsShaderValid(ShadowShader) || ShadowShader.Id == Rlgl.GetShaderIdDefault())
             throw new InvalidOperationException("Cannot load contact shadow shader.");
+        WaterShader = LoadShaderFromMemory(WorldLighting.VertexShader, WorldLighting.FragmentPrelude + GraphicsShaders.WaterFragment);
+        if (!IsShaderValid(WaterShader) || WaterShader.Id == Rlgl.GetShaderIdDefault()) throw new InvalidOperationException("Cannot load water effects shader.");
         UiText.Load();
         // Keep existing map material IDs while loading their editable PNG files first.
         var defaultTerrain = new Dictionary<string, string>
@@ -96,6 +86,7 @@ sealed class WorldAssets : IDisposable
         terrainBlending?.Dispose();
         terrainMeshes?.Dispose();
         UnloadShader(ShadowShader);
+        UnloadShader(WaterShader);
         UnloadShader(SpriteShader);
         foreach (var sprite in Sprites.Values) UnloadTexture(sprite.Texture);
         foreach (var texture in Terrain.Values) UnloadTexture(texture);
@@ -110,11 +101,12 @@ sealed partial class WorldRenderer(WorldAssets assets)
         try { if (!ExportImage(image, path)) throw new IOException("Could not save screenshot: " + path); }
         finally { UnloadImage(image); }
     }
-    public void Draw(MapData map, Camera3D camera, bool grid, Vector3? playerPosition = null, int viewWidth = 0, int viewHeight = 0, float? timeOfDay = null)
+    public void Draw(MapData map, Camera3D camera, bool grid, Vector3? playerPosition = null, int viewWidth = 0, int viewHeight = 0, float? timeOfDay = null, float maximumDistance = 0,
+        Camera3D? terrainTextureView = null, WorldVisualFrame? visuals = null)
     {
         float hour = timeOfDay ?? map.Environment.TimeOfDay;
-        var bounds = TerrainVisibility.GetBounds(map, camera, viewWidth > 0 ? viewWidth : GetScreenWidth(), viewHeight > 0 ? viewHeight : GetScreenHeight());
-        DrawTerrain(map, bounds, camera.Target, hour);
+        var bounds = TerrainVisibility.GetBounds(map, camera, viewWidth > 0 ? viewWidth : GetScreenWidth(), viewHeight > 0 ? viewHeight : GetScreenHeight(), maximumDistance);
+        DrawTerrain(map, bounds, camera, hour, terrainTextureView ?? camera, visuals);
         Vector3 player = playerPosition ?? map.GroundPosition(map.Player.X, map.Player.Z);
         DrawShadows(map, camera, player, hour, bounds);
         if (grid)
@@ -134,6 +126,7 @@ sealed partial class WorldRenderer(WorldAssets assets)
             .Append((null, map.Player.Asset ?? "", player, map.Player.Height, new Color(80, 183, 255, 255)))
             .OrderByDescending(o => Vector3.Dot(o.Item3 - camera.Position, forward));
         WorldLighting.Apply(assets.SpriteShader, map, hour, camera.Target);
+        WorldVisualFrame.Apply(assets.SpriteShader, map, camera, visuals, VisualSurface.Sprite);
         BeginShaderMode(assets.SpriteShader);
         try
         {
@@ -141,14 +134,16 @@ sealed partial class WorldRenderer(WorldAssets assets)
             {
                 byte alpha = item.Entity == null ? (byte)255 : ObstacleAlpha(map, camera, item.Entity, playerPosition);
                 if (alpha < 255) { Rlgl.DrawRenderBatchActive(); Rlgl.DisableDepthMask(); }
-                DrawSpriteGeometry(camera, item.Asset, item.Position, item.Height, item.Fallback, alpha);
+                DrawSpriteGeometry(camera, item.Asset, item.Position, item.Height, item.Fallback, alpha,
+                    visuals?.Wind > 0 && WorldVisualFrame.Vegetation(item.Entity), false,
+                    visuals?.Enabled == true && visuals.Settings.Outlines ? visuals.Settings.OutlineStrength : 0);
                 if (alpha < 255) { Rlgl.DrawRenderBatchActive(); Rlgl.EnableDepthMask(); }
             }
         }
         finally { EndShaderMode(); }
         if (obstacleOpacity.Count > map.Objects.Count + map.Chests.Count + map.Npcs.Count + map.Monsters.Count + 32)
         { var ids = map.SceneEntities.Select(o => o.Id).ToHashSet(); foreach (var id in obstacleOpacity.Keys.Where(id => !ids.Contains(id)).ToArray()) obstacleOpacity.Remove(id); }
-        DrawWater(map, camera, bounds, (float)GetTime(), hour);
+        DrawWater(map, camera, bounds, visuals?.Time ?? (float)GetTime(), hour, visuals);
     }
     public void DrawSprite(Camera3D camera, string id, Vector3 position, float height, Color fallback, byte alpha = 255)
     {
@@ -156,18 +151,19 @@ sealed partial class WorldRenderer(WorldAssets assets)
         try { DrawSpriteGeometry(camera, id, position, height, fallback, alpha); }
         finally { EndShaderMode(); }
     }
-    void DrawSpriteGeometry(Camera3D camera, string id, Vector3 position, float height, Color fallback, byte alpha = 255)
+    void DrawSpriteGeometry(Camera3D camera, string id, Vector3 position, float height, Color fallback, byte alpha = 255, bool vegetation = false, bool silhouette = false, float outline = 0)
     {
         var quad = GetSpriteQuad(camera, id, position, height);
         if (assets.Sprites.TryGetValue(id, out var asset))
         {
             Rlgl.SetTexture(asset.Texture.Id);
             Rlgl.Begin((int)DrawMode.Quads);
-            Rlgl.Color4ub(255, 255, 255, alpha);
-            var normal = quad.Normal;
-            Rlgl.Normal3f(normal.X, normal.Y, normal.Z);
+            byte tint = silhouette ? (byte)0 : (byte)255;
+            Rlgl.Color4ub(tint, tint, tint, alpha);
+            Rlgl.Normal3f(0, position.X, position.Z);
             Vertex(quad.BottomLeft, 0, 1);
             Vertex(quad.BottomRight, 1, 1);
+            Rlgl.Normal3f(vegetation ? 1 : 0, position.X, position.Z);
             Vertex(quad.TopRight, 1, 0);
             Vertex(quad.TopLeft, 0, 0);
             Rlgl.End();
@@ -175,9 +171,20 @@ sealed partial class WorldRenderer(WorldAssets assets)
         }
         else
         {
+            Rlgl.Normal3f(0, position.X, position.Z);
+            if (silhouette) fallback = Color.Black;
             fallback.A = Math.Min(fallback.A, alpha);
             DrawTriangle3D(quad.BottomLeft, quad.BottomRight, quad.TopRight, fallback);
             DrawTriangle3D(quad.BottomLeft, quad.TopRight, quad.TopLeft, fallback);
+            if (outline > 0 && !silhouette)
+            {
+                var offset = quad.Normal * .003f;
+                var ink = new Color(14,11,9,(int)(alpha*outline));
+                DrawLine3D(quad.BottomLeft+offset,quad.BottomRight+offset,ink);
+                DrawLine3D(quad.BottomRight+offset,quad.TopRight+offset,ink);
+                DrawLine3D(quad.TopRight+offset,quad.TopLeft+offset,ink);
+                DrawLine3D(quad.TopLeft+offset,quad.BottomLeft+offset,ink);
+            }
         }
     }
     static void Vertex(Vector3 point, float u, float v)

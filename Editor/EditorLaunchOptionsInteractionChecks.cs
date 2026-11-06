@@ -32,14 +32,13 @@ sealed partial class EditorApp
         ClickLaunchOptionsMenu();
         Click(x + 450, y + 142); // Isometric.
         Click(x + 335, y + 220); // Distance 29.
-        Click(x + 510, y + 296); // Grid off.
         Click(x + 440, y + 340); // 120 FPS.
         TestFrame(); TestFrame();
         WorldRenderer.Screenshot(Path.Combine(ProjectPaths.Root, "Editor", "obj", "launch-options.png"));
         Click(x + 330, y + 464);
         var options = document.Map.Runtime with { };
         Verify(launchOptions == null && camera.View.Projection == CameraProjection.Orthographic && camera.Distance == 29 &&
-            !options.ShowGrid && options.TargetFps == 120 && document.Dirty, "Apply commits every launch option");
+            options.TargetFps == 120 && document.Dirty, "Apply commits every launch option");
         ClickHeader("Undo"); Verify(document.Map.Runtime == new RuntimeSettings() && !document.Dirty, "one undo restores the complete settings change");
         ClickHeader("Redo"); Verify(document.Map.Runtime == options && camera.Distance == 29, "redo restores settings and editor camera");
         Choose(assets.Sprites.Values.First(a => a.Id.Contains("rocks/")));

@@ -1,6 +1,12 @@
 ﻿# Runtime
 
-Gra testowa odczytuje mapę stworzoną w edytorze i korzysta z tego samego renderera 2.5D. Obiekty i NPC są grafikami częściowo zwróconymi ku kamerze; na podłożu jest widoczna siatka. Podejście do NPC wyświetla podpowiedź rozmowy, a E otwiera jego dialog.
+Runtime to właściwa gra. Odczytuje mapę stworzoną w edytorze i korzysta z tego samego renderera 2.5D. Obiekty i NPC są grafikami częściowo zwróconymi ku kamerze. Siatka pomocnicza terenu jest widoczna wyłącznie podczas edycji mapy; Runtime i podgląd Play jej nie rysują, również na starszych mapach. Podejdź do NPC i naciśnij E, aby otworzyć jego dialog.
+
+Stały HUD zawiera tylko mały pasek życia bohatera, bez liczb, nazw przeciwników, ich pasków życia ani podpowiedzi klawiszy. Okna rozmów i ekwipunku pojawiają się po ich otwarciu; wiadomości zdarzeń i ekran porażki są wyświetlane w odpowiednim momencie. Ten sam uproszczony HUD działa w podglądzie Play.
+
+[Graphics/effects.json](Graphics/effects.json) steruje ośmioma efektami graficznymi: mgłą, wiatrem roślin, poświatą, promieniami słońca, rysunkowymi konturami, gorącym powietrzem nad ogniem, deszczem z mokrym terenem i kręgami na wodzie oraz reakcją na obrażenia. Działają w Runtime i Play; w pliku można je osobno wyłączać i regulować intensywność. Ustawienia odczytują się przy Nowej grze lub włączeniu Play. [Instrukcja efektów](Graphics/README.md) opisuje parametry i reguły dla wnętrz.
+
+Kod rozgrywki znajduje się w [Mechanics/](Mechanics/): ruch bohatera, interakcje, walka, nawigacja potworów, dialogi i postęp. [Characters/](Characters/) zawiera informacje o bohaterze, NPC i przeciwnikach. Edytowalny [player.json](Characters/player.json) ustawia nazwę i opis bohatera oraz HP, obrażenia, prędkość chodu i biegu, zasięg i odstęp ataków oraz zasięg interakcji. Zmiany są odczytywane przy uruchomieniu Runtime lub włączeniu Play; [instrukcja postaci](Characters/README.md) opisuje pola i jednostki.
 
 Mapa zapisuje pole `Type`: `OpenWorld`, `Building` lub `Cave`. Budynki i jaskinie mają stały mrok, niezależny od godziny, cyklu dnia i nocy oraz flagi wyłączającej oświetlenie. Lokalne światła nadal rozświetlają teren, grafiki i wodę. Reguła obowiązuje także po przejściu między mapami i wczytaniu postępu. Starsze pliki bez `Type` są otwartym światem i zachowują dotychczasowe ustawienia dnia i nocy. Typ wybiera się w edytorze przez **hamburger → Nowa mapa**.
 
@@ -16,6 +22,12 @@ Z głównego katalogu repozytorium:
 dotnet run --project Runtime
 ```
 
+Przy starcie pojawia się **menu główne**: **Nowa gra**, wyszarzone i nieaktywne **Wczytaj grę**, **Opcje** oraz **Wyjdź z gry**. Nowa gra najpierw wyświetla karty narracyjne, a następnie rozpoczyna świeżą rozgrywkę na wybranej mapie. Opcje pozwalają ustawić głośność 0–100% i przełączyć pełny ekran bez ramek; ustawienia obowiązują w bieżącym uruchomieniu gry. Menu obsługuje mysz oraz strzałki i Enter. W opcjach lewo/prawo zmienia głośność, Escape lub Powrót wraca do menu.
+
+Karty fabularne edytujesz w [Narrative/intro.json](Narrative/intro.json): osobne bloki tekstu, opcjonalny obraz nad tekstem, czas wyświetlania, fade-in i fade-out oraz efekty **Typewriter**, **Fade** i **Scroll**. Przewijanie działa w obu kierunkach. Obrazy dodawaj do [Narrative/images/](Narrative/images/). Spacja lub Enter odsłania tekst i przechodzi dalej, a Esc pomija wstęp. Ostatnia karta wygasza cały ekran do czerni, po czym gra płynnie się odsłania. `BlackHold` ustawia chwilę czerni, a `GameFadeIn` czas odsłaniania gry. Rozgrywka jest zatrzymana do końca przejścia. [Instrukcja kart narracyjnych](Narrative/README.md) zawiera przykład JSON i opis wszystkich pól.
+
+Escape w grze zamyka najpierw rozmowę lub ekwipunek, a poza tym wraca do menu głównego. Aby zachować postęp przed powrotem, użyj F6. Kolejne wybranie Nowej gry zaczyna mapę od początku. Podgląd Play w edytorze uruchamia rozgrywkę bezpośrednio. [GameApp.cs](GameApp.cs) zarządza tym przepływem, a [MainMenu.cs](UI/MainMenu.cs) zawiera prosty interfejs menu.
+
 Domyślnie wczytuje `Runtime/Maps/world.json`. Jeśli plik jeszcze nie istnieje, pokazuje przykładową scenę. Można wskazać inny plik:
 
 ```sh
@@ -23,6 +35,10 @@ dotnet run --project Runtime -- --map Runtime/Maps/test.json
 ```
 
 Materiały podłoża płynnie blendują się na granicach kafelków oraz przy zbiegu czterech tekstur. Przejścia działają na zboczach i w obu rzutach kamery, również z własnymi PNG z `Editor/terrain/`. Malowanie i cofanie w edytorze od razu odświeżają efekt; format mapy pozostaje zgodny ze starszymi zapisami.
+
+Wzór tekstury podłoża jest ułożony tak, aby góra PNG wskazywała w głąb wybranego widoku 3/4 lub izometrycznego. Źdźbła trawy zachowują właściwy kierunek w obu rzutach. Wolna kamera edytora zachowuje ułożenie z ostatniego stałego widoku, więc jej obracanie i przesuwanie nie porusza wzoru po terenie. Malowane obszary i granice materiałów pozostają w swoich współrzędnych świata.
+
+Mapy mogą zawierać edytowalne drogi w polu `Roads`: punkty krzywej, materiał, szerokość i miękkość brzegu. Runtime rysuje je na aktualnej powierzchni terenu, również na zboczach po erozji, z takim samym blendowaniem jak w edytorze i Play. Starsze mapy mają pustą listę dróg. Wyniki malowania biomami i erozji korzystają ze zwykłych materiałów, obiektów oraz wysokości mapy.
 
 ## Sterowanie
 
@@ -48,7 +64,7 @@ NPC może wypowiedzieć kilka kwestii po sobie. Kolejne kwestie przechodzą po j
 
 Punkt startowy, wygląd postaci, rozmiary obiektów i kolizje ustawia się w edytorze. Nie jest to jeszcze pełna gra RPG: nie ma mechanik przetrwania.
 
-Menu hamburgerowe **Launch options** w edytorze zapisuje w mapie rzut **Perspective** lub **Isometric**, początkową odległość kamery, widoczność siatki oraz limit FPS. Runtime korzysta z tych samych ustawień co podgląd Play. Perspektywa zachowuje dotychczasową kamerę; izometria używa projekcji ortograficznej, kierunku 45° i stałego nachylenia około 35,26°. Sterowanie podąża za kierunkiem wybranego widoku. Starsze mapy domyślnie korzystają z perspektywy, odległości 30 m, widocznej siatki i 60 FPS. Argumenty `--close` / `--far` nadal pozwalają nadpisać startowy zoom.
+Menu hamburgerowe **Launch options** w edytorze zapisuje w mapie rzut **Perspective** lub **Isometric**, początkową odległość kamery oraz limit FPS. Runtime korzysta z tych samych ustawień co podgląd Play. Perspektywa zachowuje dotychczasową kamerę; izometria używa projekcji ortograficznej, kierunku 45° i stałego nachylenia około 35,26°. Sterowanie podąża za kierunkiem wybranego widoku. Starsze mapy domyślnie korzystają z perspektywy, odległości 30 m i 60 FPS. Dawne pole `ShowGrid` pozostaje zgodne z formatem mapy, ale jest pomijane podczas rysowania gry. Argumenty `--close` / `--far` nadal pozwalają nadpisać startowy zoom.
 
 ## Ekwipunek i skrzynie
 
@@ -60,7 +76,7 @@ Podejdź do skrzyni i naciśnij E. Jej zawartość jest po lewej, EQ bohatera po
 
 Potwory umieszcza się w edytorze narzędziem **Monster / 9**. Mają nazwę, PNG lub czerwony placeholder oraz własne HP, obrażenia, prędkość, zasięg wykrywania, zasięg ataku i przerwę między atakami. Domyślnie: 30 HP, 10 obrażeń, 2,4 m/s, wykrywanie do 6 m, zasięg ataku 1 m poza promieniem kolizji i atak co 1 s. Wykryty gracz jest ścigany; przeszkody uruchamiają ograniczone wyszukiwanie drogi. Woda ponad 0,55 m, strome zbocza i obiekty z kolizją blokują ruch. Potwór wraca do miejsca startowego, jeśli straci gracza lub oddali się od startu o ponad dwukrotność zasięgu wykrywania.
 
-Bohater ma 100 HP i zadaje 10 obrażeń najbliższemu przeciwnikowi do 1,8 m co 0,4 s. **Spacja** wykonuje atak, przytrzymanie powtarza go. Przeszkody blokują ciosy obu stron. Paski życia oraz krótkie podświetlenie pokazują obrażenia. Potwór z 0 HP znika i przestaje blokować drogę. Dialog i ekwipunek pauzują również przeciwników i ataki.
+Bohater domyślnie ma 100 HP i zadaje 10 obrażeń najbliższemu przeciwnikowi do 1,8 m co 0,4 s. **Spacja** wykonuje atak, przytrzymanie powtarza go. Przeszkody blokują ciosy obu stron. Stan bohatera pokazuje pojedynczy pasek życia bez liczb. Potwór z 0 HP znika i przestaje blokować drogę. Dialog i ekwipunek pauzują również przeciwników i ataki.
 
 Przy 0 HP bohater przestaje się poruszać i atakować. **Enter** przywraca początkową mapę, życie wszystkich aktorów oraz startową zawartość EQ i skrzyń. Zmiany walki pozostają w sesji i nie zapisują się do pliku mapy.
 
@@ -98,8 +114,11 @@ Brakująca grafika obiektu jest zastępowana różowym prostokątem, a brakując
 
 ## Testy
 
+`--menu-interaction-test` otwiera okno i sprawdza przyciski myszy oraz klawiaturę, nieaktywny przycisk wczytywania, głośność, pełny ekran, minimalne okno, nową grę, powrót przez Escape i wyjście. Korzysta z osobnej mapy w `Runtime/obj/` i zapisuje podglądy menu w `Editor/obj/main-menu.png`, `Editor/obj/main-menu-options.png` i `Editor/obj/main-menu-small.png`. Testy `--smoke-test` i ich warianty uruchamiają rozgrywkę bezpośrednio.
+
 ```sh
 dotnet run --project Runtime -- --camera-test
+dotnet run --project Runtime -- --character-test
 dotnet run --project Runtime -- --world-test
 dotnet run --project Runtime -- --world-gpu-test
 dotnet run --project Runtime -- --billboard-test
@@ -110,6 +129,11 @@ dotnet run --project Runtime -- --map-test
 dotnet run --project Runtime -- --terrain-test
 dotnet run --project Runtime -- --terrain-blend-test
 dotnet run --project Runtime -- --sprite-water-test
+dotnet run --project Runtime -- --menu-interaction-test
+dotnet run --project Runtime -- --narrative-test
+dotnet run --project Runtime -- --narrative-interaction-test
+dotnet run --project Runtime -- --graphics-test
+dotnet run --project Runtime -- --graphics-gpu-test
 dotnet run --project Runtime -- --smoke-test
 ```
 
@@ -117,7 +141,7 @@ Testy kamery, dialogów, map i terenu działają bez okna. Test dialogów sprawd
 
 `--sprite-water-test` wymaga sesji graficznej i porównuje piksele renderowane przez GPU przy różnych przybliżeniach: wodę pod przezroczystym tłem i otworami grafiki, widoczną część obiektu oraz zanurzenie. Zapisuje podgląd drzewa nad wodą w `Editor/obj/sprite-water.png`. Ten sam test uruchamia się w teście interakcji edytora.
 
-`--terrain-blend-test` porównuje piksele GPU na środkach, granicach i narożnikach materiałów, sprawdza własne tekstury, malowanie/cofanie, powtarzanie bez przenikania atlasu, kilka partii renderowania, zmianę widocznego obszaru mapy 2048 × 2048, starsze pola water oraz oba rzuty na zboczach. Wymaga sesji graficznej. Zapisuje `Editor/obj/terrain-blend-perspective.png` oraz `Editor/obj/terrain-blend-isometric.png`. Pełny test interakcji edytora również go uruchamia.
+`--terrain-blend-test` porównuje piksele GPU na środkach, granicach i narożnikach materiałów, sprawdza własne tekstury, malowanie/cofanie, powtarzanie bez przenikania atlasu, kilka partii renderowania, zmianę widocznego obszaru mapy 2048 × 2048, starsze pola water oraz oba rzuty na zboczach. Asymetryczny wzór kontrolny sprawdza kierunek góry, dołu i boków PNG w kamerze 3/4, izometrycznej i pionowej oraz stałe położenie tekstur w świecie przy obracaniu, przesuwaniu i zoomie wolnej kamery, bez przebudowy siatek terenu. Wymaga sesji graficznej. Zapisuje `Editor/obj/terrain-blend-perspective.png` oraz `Editor/obj/terrain-blend-isometric.png`. Pełny test interakcji edytora również go uruchamia.
 
 `--inventory-test` działa bez okna i sprawdza rozmiary itemków, kolizje w siatce, przenoszenie bez utraty przedmiotów, pełne EQ, zasięg skrzyni, duplikowanie, zapis/wczytanie, cofanie oraz niezależność podglądu. `--inventory-smoke-test --map ścieżka.json` pokazuje EQ i pierwszą skrzynię z mapy (musi być w zasięgu punktu startowego); bez skrzyń pokazuje samo EQ. Kończy się po 15 klatkach i zapisuje `Editor/obj/inventory-runtime.png`.
 

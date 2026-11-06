@@ -13,9 +13,15 @@ readonly record struct TerrainBounds(int MinX, int MinZ, int MaxX, int MaxZ)
 
 static class TerrainVisibility
 {
-    public static TerrainBounds GetBounds(MapData map, Camera3D camera, int viewWidth, int viewHeight)
+    public static TerrainBounds GetBounds(MapData map, Camera3D camera, int viewWidth, int viewHeight, float maximumDistance = 0)
     {
         var full = new TerrainBounds(0, 0, map.Width, map.Depth);
+        // Free editor cameras can face the horizon. Keep that conservative fallback local.
+        if (maximumDistance > 0)
+            full = new(Math.Clamp((int)(camera.Position.X + map.Width / 2f - maximumDistance), 0, map.Width),
+                Math.Clamp((int)(camera.Position.Z + map.Depth / 2f - maximumDistance), 0, map.Depth),
+                Math.Clamp((int)MathF.Ceiling(camera.Position.X + map.Width / 2f + maximumDistance), 0, map.Width),
+                Math.Clamp((int)MathF.Ceiling(camera.Position.Z + map.Depth / 2f + maximumDistance), 0, map.Depth));
         if (viewWidth <= 0 || viewHeight <= 0) return full;
         bool orthographic = camera.Projection == CameraProjection.Orthographic;
         if (!orthographic && camera.Projection != CameraProjection.Perspective) return full;
@@ -42,9 +48,9 @@ static class TerrainVisibility
         }
         // Keep a tile of padding to avoid clipping the edge of the viewport or grid.
         return new(
-            Math.Clamp((int)MathF.Floor(minX + map.Width / 2f) - 1, 0, map.Width),
-            Math.Clamp((int)MathF.Floor(minZ + map.Depth / 2f) - 1, 0, map.Depth),
-            Math.Clamp((int)MathF.Ceiling(maxX + map.Width / 2f) + 1, 0, map.Width),
-            Math.Clamp((int)MathF.Ceiling(maxZ + map.Depth / 2f) + 1, 0, map.Depth));
+            Math.Clamp((int)MathF.Floor(minX + map.Width / 2f) - 1, full.MinX, full.MaxX),
+            Math.Clamp((int)MathF.Floor(minZ + map.Depth / 2f) - 1, full.MinZ, full.MaxZ),
+            Math.Clamp((int)MathF.Ceiling(maxX + map.Width / 2f) + 1, full.MinX, full.MaxX),
+            Math.Clamp((int)MathF.Ceiling(maxZ + map.Depth / 2f) + 1, full.MinZ, full.MaxZ));
     }
 }

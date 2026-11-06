@@ -1,0 +1,46 @@
+{
+  "Enabled": true,
+  "BlackHold": 0.15,
+  "GameFadeIn": 1.2,
+  "Cards": [
+    {
+      "TextBlocks": [
+        "Nie pamiętasz drogi, która przywiodła cię do tego lasu.",
+        "Pamiętasz tylko głos. I obietnicę, że ktoś będzie czekał po drugiej stronie."
+      ],
+      "Image": null,
+      "Effect": "Typewriter",
+      "Duration": 10,
+      "CharactersPerSecond": 32,
+      "FadeIn": 0.8,
+      "FadeOut": 0.8,
+      "FontSize": 26
+    },
+    {
+      "TextBlocks": [
+        "O świcie mgła odsłania ścieżkę między drzewami.",
+        "Przed tobą Wildwood. Twoja historia dopiero się zaczyna."
+      ],
+      "Image": null,
+      "Effect": "Fade",
+      "Duration": 6,
+      "FadeIn": 1.2,
+      "FadeOut": 1.2,
+      "FontSize": 26
+    },
+    {
+      "TextBlocks": [
+        "WILDWOOD",
+        "Każda ścieżka prowadzi do czyjejś opowieści.",
+        "Wyrusz w drogę."
+      ],
+      "Image": null,
+      "Effect": "Scroll",
+      "ScrollDirection": "Down",
+      "Duration": 7,
+      "FadeIn": 0.6,
+      "FadeOut": 0.8,
+      "FontSize": 28
+    }
+  ]
+}

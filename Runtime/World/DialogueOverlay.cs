@@ -14,14 +14,6 @@ sealed class DialogueOverlay
         if (!dialogue.Active)
         {
             nodeId = null;
-            if (play.PlayerAlive && !play.InventoryOpen && play.InteractionTarget is NpcData nearby)
-            {
-                string hint = $"E  Porozmawiaj: {nearby.Name}";
-                int width = Math.Min((int)bounds.Width - 24, UiText.Measure(hint, 18) + 32);
-                int hx = (int)(bounds.X + (bounds.Width - width) / 2), hy = (int)(bounds.Y + bounds.Height - 58);
-                DrawRectangle(hx, hy, width, 38, Panel);
-                UiText.Draw(hint, hx + 16, hy + 10, 18, Accent);
-            }
             return;
         }
         var current = dialogue.Current!;

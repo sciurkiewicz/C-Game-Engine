@@ -152,17 +152,6 @@ sealed class InventoryOverlay
         if (!play.InventoryOpen)
         {
             interaction.Reset(); Views = [];
-            if (!play.PlayerAlive || play.Dialogue.Active) return;
-            DrawRectangle((int)(bounds.X + bounds.Width - 170), (int)bounds.Y + 12, 158, 28, new(20, 28, 38, 235));
-            UiText.Draw("I  Ekwipunek", (int)(bounds.X + bounds.Width - 154), (int)bounds.Y + 18, 15, new(230, 238, 242, 255));
-            if (play.InteractionTarget is ChestData chest)
-            {
-                string hint = $"E  Otwórz: {chest.Name}";
-                int width = Math.Min((int)bounds.Width - 24, UiText.Measure(hint, 18) + 32);
-                int x = (int)(bounds.X + (bounds.Width - width) / 2), y = (int)(bounds.Y + bounds.Height - 58);
-                DrawRectangle(x, y, width, 38, new(20, 28, 38, 248));
-                UiText.Draw(hint, x + 16, y + 10, 18, new(234, 200, 128, 255));
-            }
             return;
         }
         bool chestOpen = play.OpenedChest != null;

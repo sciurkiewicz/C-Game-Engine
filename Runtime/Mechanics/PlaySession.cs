@@ -6,31 +6,13 @@ sealed partial class PlaySession
 {
     public MapData Map { get; private set; }
     public Vector3 Player { get; private set; }
+    public PlayerDefinition Character { get; }
     public FollowCamera Camera { get; }
     public DialogueSession Dialogue { get; } = new();
-    public InventoryGrid Inventory => Map.Player.Inventory;
-    public bool InventoryOpen { get; private set; }
-    public ChestData? OpenedChest { get; private set; }
-    public const float TalkDistance = 2.5f;
-    public NpcData? NearbyNpc => Map.Npcs.Where(n => Vector3.Distance(Map.GroundPosition(n), Player) <= TalkDistance)
-        .OrderBy(n => Vector3.DistanceSquared(Map.GroundPosition(n), Player)).FirstOrDefault();
-    public SceneObject? InteractionTarget => Map.Npcs.Cast<SceneObject>().Concat(Map.Chests)
-        .Where(item => Vector3.Distance(Map.GroundPosition(item), Player) <= TalkDistance)
-        .OrderBy(item => Vector3.DistanceSquared(Map.GroundPosition(item), Player)).FirstOrDefault();
-    public bool OpenChest(ChestData chest)
+    public PlaySession(MapData map, string? sourcePath = null, string? progressPath = null, PlayerDefinition? character = null)
     {
-        if (!PlayerAlive || Dialogue.Active || !Map.Chests.Contains(chest) || Vector3.Distance(Map.GroundPosition(chest), Player) > TalkDistance) return false;
-        chest.Opened = true; OpenedChest = chest; InventoryOpen = true; return true;
-    }
-    public void ToggleInventory()
-    {
-        if (!PlayerAlive || Dialogue.Active) return;
-        if (InventoryOpen) CloseInventory();
-        else { OpenedChest = null; InventoryOpen = true; }
-    }
-    public void CloseInventory() { InventoryOpen = false; OpenedChest = null; }
-    public PlaySession(MapData map, string? sourcePath = null, string? progressPath = null)
-    {
+        Character = character ?? new PlayerDefinition();
+        Character.Validate();
         entryMapPath = CurrentMapPath = Path.GetFullPath(sourcePath ?? ProjectPaths.MapFile);
         ProgressPath = progressPath ?? GameProgress.SavePath(entryMapPath);
         initialMap = MapSnapshot.Capture(map);
@@ -73,13 +55,7 @@ sealed partial class PlaySession
         if (IsKeyPressed(KeyboardKey.R)) Camera.Reset();
         float x = (IsKeyDown(KeyboardKey.D) || IsKeyDown(KeyboardKey.Right) ? 1 : 0) - (IsKeyDown(KeyboardKey.A) || IsKeyDown(KeyboardKey.Left) ? 1 : 0);
         float z = (IsKeyDown(KeyboardKey.S) || IsKeyDown(KeyboardKey.Down) ? 1 : 0) - (IsKeyDown(KeyboardKey.W) || IsKeyDown(KeyboardKey.Up) ? 1 : 0);
-        var move = Camera.Right * x + Camera.Backward * z;
-        if (move.LengthSquared() > 0)
-        {
-            move = Vector3.Normalize(move) * (IsKeyDown(KeyboardKey.LeftShift) ? 6 : 3.6f) * dt;
-            TryMovePlayer(Player + new Vector3(move.X, 0, 0));
-            TryMovePlayer(Player + new Vector3(0, 0, move.Z));
-        }
+        MovePlayer(new(x, z), IsKeyDown(KeyboardKey.LeftShift), dt);
         Camera.Update(Player, dt);
         UpdateCombat(dt, IsKeyDown(KeyboardKey.Space));
         AdvanceWorld(dt);

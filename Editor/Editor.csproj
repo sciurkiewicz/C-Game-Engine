@@ -9,6 +9,9 @@
   <ItemGroup>
     <PackageReference Include="Raylib-cs" Version="8.1.0" />
     <Compile Include="../Runtime/World/**/*.cs" Link="World/%(RecursiveDir)%(Filename)%(Extension)" />
+    <Compile Include="../Runtime/Mechanics/**/*.cs" Link="Mechanics/%(RecursiveDir)%(Filename)%(Extension)" />
+    <Compile Include="../Runtime/Characters/**/*.cs" Link="Characters/%(RecursiveDir)%(Filename)%(Extension)" />
+    <Compile Include="../Runtime/Graphics/**/*.cs" Link="Graphics/%(RecursiveDir)%(Filename)%(Extension)" />
     <Compile Include="../Runtime/FollowCamera.cs" Link="World/FollowCamera.cs" />
   </ItemGroup>
 </Project>

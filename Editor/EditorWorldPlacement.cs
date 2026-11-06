@@ -9,7 +9,8 @@ sealed partial class EditorApp
     {
         if (IsKeyPressed(KeyboardKey.Escape))
         { drawingTrigger = false; drawingColliderId = null; triggerStart = triggerEnd = null; colliderPoints.Clear(); status = "Drawing cancelled."; return; }
-        camera.Zoom(InViewport ? GetMouseWheelMove() : 0); camera.Update(focus, dt);
+        if (UpdateMinimapInput()) return;
+        if (UpdateEditorCamera(dt, IsKeyDown(KeyboardKey.LeftControl) || IsKeyDown(KeyboardKey.RightControl))) return;
         if (drawingColliderId != null)
         {
             var entity = document.Map.SceneEntities.FirstOrDefault(e => e.Id == drawingColliderId);

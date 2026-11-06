@@ -203,6 +203,9 @@ sealed partial class EditorApp
         RunDialogueSequenceInteractionChecks();
         RunMonsterInteractionChecks();
         RunWorldFeatureInteractionChecks();
+        RunWorkflowInteractionChecks();
+        RunLandscapeInteractionChecks();
+        RunFragmentInteractionChecks();
         WorldFeatureGpuChecks.Run(assets);
         SetWindowSize(1120, 720); TestFrame(); TestFrame();
         Verify(canvas.Texture.Width == 608 && canvas.Texture.Height == 600, "resizable viewport");

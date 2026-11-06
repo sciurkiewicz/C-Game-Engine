@@ -10,6 +10,7 @@ sealed class WorldProgress
     public float PlayerX { get; set; }
     public float PlayerZ { get; set; }
     public int Health { get; set; }
+    public int MaxHealth { get; set; } = 100; // Progress written before character profiles used 100 HP.
     public float TimeOfDay { get; set; }
     public Dictionary<string, int> MonsterHealth { get; set; } = [];
     public Dictionary<string, GroundPoint2> MonsterSpawns { get; set; } = [];
@@ -18,7 +19,7 @@ sealed class WorldProgress
     {
         if (Original == null || State == null) throw new InvalidDataException("Missing saved world.");
         Original.Validate(); State.Validate();
-        if (!State.Contains(PlayerX, PlayerZ) || Health is < 0 or > PlaySession.PlayerMaxHealth ||
+        if (!State.Contains(PlayerX, PlayerZ) || MaxHealth is < 1 or > 10000 || Health < 0 || Health > MaxHealth ||
             !MapData.FiniteRange(TimeOfDay, 0, 24) || MonsterHealth == null || MonsterSpawns == null || FiredTriggers == null ||
             MonsterHealth.Count != State.Monsters.Count || State.Monsters.Any(m => !MonsterHealth.TryGetValue(m.Id, out int hp) || hp < 1 || hp > m.MaxHealth) ||
             FiredTriggers.Count > State.Triggers.Count || FiredTriggers.Any(id => !State.Triggers.Any(t => t.Id == id)))
@@ -73,12 +74,6 @@ sealed partial class PlaySession
         TimeOfDay = Map.AlwaysDark ? 0 : Map.Environment.TimeOfDay;
         FiredTriggers.Clear(); insideTriggers.Clear(); Notice = ""; noticeSeconds = 0;
     }
-    public bool TryMovePlayer(Vector3 destination)
-    {
-        destination = Map.Clamp(destination);
-        if (!WorldRenderer.CanWalk(Map, destination, Player)) return false;
-        Player = destination; return true;
-    }
     public void AdvanceWorld(float dt)
     {
         if (!float.IsFinite(dt) || dt <= 0 || !PlayerAlive || Dialogue.Active || InventoryOpen) return;
@@ -122,7 +117,7 @@ sealed partial class PlaySession
     }
     WorldProgress CaptureProgress() => new()
     {
-        Original = initialMap.Restore(), State = Map, PlayerX = Player.X, PlayerZ = Player.Z, Health = PlayerHealth,
+        Original = initialMap.Restore(), State = Map, PlayerX = Player.X, PlayerZ = Player.Z, Health = PlayerHealth, MaxHealth = Character.MaxHealth,
         TimeOfDay = TimeOfDay, FiredTriggers = FiredTriggers.ToHashSet(), MonsterHealth = monsters.ToDictionary(m => m.Key, m => m.Value.Health),
         MonsterSpawns = monsters.ToDictionary(m => m.Key, m => new GroundPoint2(m.Value.Spawn.X, m.Value.Spawn.Z))
     };
@@ -136,7 +131,7 @@ sealed partial class PlaySession
             var spawn = world.MonsterSpawns[actor.Id];
             monsters[actor.Id] = new(actor, Map.GroundPosition(spawn.X, spawn.Z)) { Health = world.MonsterHealth[actor.Id] };
         }
-        PlayerHealth = world.Health; TimeOfDay = Map.AlwaysDark ? 0 : world.TimeOfDay;
+        PlayerHealth = Math.Min(world.Health, Character.MaxHealth); TimeOfDay = Map.AlwaysDark ? 0 : world.TimeOfDay;
         FiredTriggers = world.FiredTriggers.ToHashSet(); insideTriggers.Clear();
         // Loading while standing in a repeatable trigger must not execute it a second time.
         foreach (var trigger in Map.Triggers.Where(t => t.Enabled && t.Contains(Player))) insideTriggers.Add(trigger.Id);

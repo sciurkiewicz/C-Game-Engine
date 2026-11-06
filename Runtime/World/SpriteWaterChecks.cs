@@ -66,7 +66,8 @@ static class SpriteWaterChecks
                 }
                 finally { UnloadImage(background); UnloadImage(composite); }
             }
-            var tree = assets.Sprites.Values.First(a => a.Id.Contains("/trees/"));
+            var tree = assets.Sprites.Values.FirstOrDefault(a => a.Id.Contains("/trees/")) ??
+                assets.Sprites.Values.FirstOrDefault(a => a.Id.StartsWith("objects/vegetation/")) ?? assets.Sprites[id];
             map.Objects.Clear(); map.Objects.Add(new() { Asset = tree.Id, Height = 5 });
             var example = Capture(new FollowCamera(Vector3.Zero).View);
             try
