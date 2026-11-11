@@ -13,9 +13,13 @@ static class EditorChecks
         MapSizeChecks.Run();
         RuntimeSettingsChecks.Run();
         WorldFeatureChecks.Run();
+        WallChecks.Run();
+        GridWallChecks.Run();
+        WallCacheChecks.Run();
         EditorWorkflowChecks.Run();
         EditorLandscapeChecks.Run();
         EditorFragmentChecks.Run();
+        EditorWallFragmentChecks.Run();
         var sizes = new MapDocument(new MapData(), true);
         sizes.New(20, 12);
         Check(sizes.Map.Width == 20 && sizes.Map.Depth == 12 && sizes.Map.Tiles.Length == 240 && sizes.Map.Tiles.All(t => t == "grass"), "rectangular new map");

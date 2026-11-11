@@ -19,6 +19,7 @@ dotnet run --project Editor
 | Water / 7 | Kliknij zagłębienie, aby wypełnić je wodą do ustawionego poziomu, lub opróżnij zbiornik. |
 | Chest / 8 | Kliknij mapę, aby wstawić skrzynię. Zaznacz ją i wybierz Items, aby przypisać zawartość. |
 | Monster / 9 | Wybierz PNG postaci lub czerwony znacznik i kliknij mapę. Zaznacz potwora i wybierz Stats, aby ustawić walkę. |
+| Ściany / 0 | Siatka maluje pełne bloki ścian lochu; Punkty zachowują rysowanie ścian przez węzły. |
 
 Obiekty można duplikować, usuwać i skalować. Kolizje są prostymi okręgami wokół podstawy obiektu. Wysokość wpływa na ich promień. Pozycje są domyślnie przyciągane do siatki co 0,5 jednostki; przycisk **Snap** wyłącza przyciąganie.
 
@@ -33,6 +34,34 @@ Pole **Search graphics / Search materials** filtruje bibliotekę po nazwie i śc
 W **Place → Object brush: ON → Brush settings** ustaw promień, liczbę obiektów na odcisk, minimalny odstęp i losową zmianę rozmiaru. Przytrzymaj LMB i przesuwaj mysz, aby malować obiektami. **Ctrl+klik grafik w bibliotece** miesza kilka wybranych PNG. Pędzel pomija głęboką wodę i strome zbocza, zachowuje odstępy od istniejących aktorów i nie dokłada obiektów co klatkę przy nieruchomej myszy. Całe pociągnięcie cofa się jednym Ctrl+Z. Pędzel działa dla zwykłych obiektów; prefabrykaty i skrzynie zachowują osobne narzędzia.
 
 Nowe obiekty i skrzynie zachowują wspólną skalę **128 pikseli = 1 jednostka świata**: grafika 256 × 256 jest dwa razy szersza i wyższa niż 128 × 128. Przycinanie przezroczystych marginesów usuwa tylko puste miejsce, a zmniejszanie dużych tekstur na GPU nie zmienia skali. Wysokość można nadal zmienić ręcznie; zapisane mapy zachowują ustawione rozmiary.
+
+## Ściany
+
+Osobna zakładka **Ściany / 0** ma dwa tryby: **Siatka** do labiryntów, korytarzy i lochów oraz **Punkty** do ścian rysowanych przez węzły. Oba tworzą stałe bryły 3D z materiałem **Skała jaskiniowa**, **Mur** lub **Drewno**.
+
+W **Siatce** przytrzymaj LMB i przeciągaj po podłożu, aby malować pełne bloki ścian o wielkości **1 × 1 m**. Puste kratki pozostają podłogą i tworzą korytarze. **Shift+LMB** albo **Wymazuj / kuj korytarz** wykuwa przejścia. **Obrys pokoju** pozwala przeciągnąć prostokąt: powstają ściany obwodowe, a środek zostaje pusty. Pędzel ma szerokość 1, 3, 5 lub 7 kratek. Jedno Ctrl+Z cofa całe pociągnięcie lub cały pokój.
+
+**Skała jaskiniowa** w siatce ma nierówne boki, zmienny przekrój i poszarpaną górną krawędź; suwak **Nierówność skały** zmienia intensywność 0–1. To zmiany geometrii, a kolizja odpowiada jej przebiegowi. Sąsiednie bloki łączą się wspólnymi krawędziami i pomijają zasłonięte ściany. **Mur** oraz **Drewno** pozostają regularne, odpowiednie do budynków i klasycznych labiryntów. Ustaw wysokość 0,5–12 m, kolizję i odsłanianie gracza przed malowaniem. Malowanie istniejącej kratki aktualizuje jej ustawienia. Kształt jaskini nie zmienia się przy przesuwaniu kamery, zapisie lub wczytaniu. Limit wynosi 65536 kratek ścian.
+
+W **Punktach** klikaj kolejne punkty na podłożu, aby narysować przebieg ściany; przeciągaj zielone uchwyty, aby je przesuwać. Po prawej ustawisz wysokość 0,25–24 m, grubość 0,1–4 m, kolizję i odsłanianie gracza. **Zamknij obrys / pokój** łączy ostatni punkt z pierwszym. Pozostaw przerwę między osobnymi ścianami na wejście lub obiekt drzwi.
+
+**Enter / Zapisz** zatwierdza cały szkic jako jedną operację cofania. **Backspace / Cofnij punkt** usuwa ostatni punkt, a **Esc** odrzuca szkic bez zmiany zapisanej ściany. Wybierz ścianę z listy po lewej lub użyj **Wybierz ścianę na mapie**, aby edytować jej przebieg, materiał i nazwę. Zapisz zmiany Enterem; **Delete / Usuń ścianę** usuwa wybraną ścianę. **Ctrl+Z / Ctrl+Y** cofa i przywraca całą operację.
+
+Ściany podążają za wysokością podłoża i zachowują położenie w perspektywie, izometrii oraz wolnej kamerze. Widać je na minimapie i w wyszukiwarce sceny. Kopiowanie fragmentów mapy obejmuje osobną kategorię **Walls**, przycina ściany do obszaru i nadaje kopiom nowe identyfikatory. Zastępowanie zachowuje odcinki poza wklejanym prostokątem.
+
+Właściwa gra i Play odczytują te same ściany: blokują ruch bohatera, potworów i ciosy. Materiały reagują na światła oraz efekty graficzne. Gdy ściana zasłania bohatera, ustawienie **World → Environment → Fade occluders** i jej opcja **Odsłanianie gracza** pozwalają ją wygaszać. Mapa mieści do 256 ścian po 128 punktów; starsze mapy otrzymują pustą listę ścian.
+
+Test interfejsu, zapisu, kamer, Play i renderowania materiałów:
+
+```sh
+dotnet run --project Editor -- --wall-interaction-test
+```
+
+Sam tryb lochów: `dotnet run --project Editor -- --grid-wall-interaction-test`. Testy danych i geometrii: `dotnet run --project Runtime -- --grid-wall-test`.
+
+Duże lochy korzystają z buforów GPU w fragmentach **8 × 8 kratek** i rysują fragmenty widoczne w kamerze. Malowanie przebudowuje tylko zmieniony fragment i jego bezpośrednich sąsiadów; zmiany wysokości podłoża odświeżają odpowiadające im siatki. Wygaszanie przed graczem aktualizuje kolor bufora bez przebudowy geometrii. Nierówne kształty skał, materiały oraz kolizje zachowują ten sam wygląd i przebieg. Bufory odległych fragmentów są zwalniane, a minimapa przechowuje ściany w swojej teksturze. Malowanie i sprawdzanie niezapisanych zmian korzystają z indeksu kratek, bez kopiowania i serializowania całego lochu co klatkę.
+
+`dotnet run --project Runtime -- --wall-cache-gpu-test` porównuje piksele z rysowaniem pojedynczych brył w trzech widokach oraz sprawdza lokalną przebudowę, odsłanianie gracza i zwalnianie buforów. `dotnet run --project Editor -- --wall-performance-test` mierzy edytor, minimapę, świat gry i malowanie na pomocniczej scenie **15 360 bloków**; wyniki trafiają do katalogu kompilacji `obj/`.
 
 ## Sterowanie i zapis
 

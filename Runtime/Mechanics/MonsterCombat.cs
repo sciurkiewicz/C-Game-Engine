@@ -82,6 +82,11 @@ sealed partial class PlaySession
     {
         // Check a segment at body height: a wall, high ridge or another solid actor blocks melee.
         var a = from + Vector3.UnitY * .65f; var b = to + Vector3.UnitY * .65f;
+        var delta = b - a; float distance = delta.Length();
+        if (distance > .0001f && Map.Walls.Any(w => w.Solid && WallGeometry.RayDistance(Map, w,
+            new() { Position = a, Direction = delta / distance }) is { } hit && hit < distance)) return false;
+        if (distance > .0001f && GridWallGeometry.Near(Map, new(from.X, from.Z), new(to.X, to.Z), 0).Any(c => c.Solid &&
+            WallGeometry.RayDistance(Map, c.AsWall(Map), new() { Position = a, Direction = delta / distance }) is { } hit && hit < distance)) return false;
         int samples = Math.Max(1, (int)MathF.Ceiling(Vector3.Distance(a, b) / .15f));
         for (int i = 1; i < samples; i++)
         {

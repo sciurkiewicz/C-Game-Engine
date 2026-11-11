@@ -139,6 +139,7 @@ sealed partial class EditorApp
         document.Recover(recoveryPath);
         selectedId = null; selectedIds.Clear(); activePrefab = null;
         ResetRoadDraft();
+        ResetWallDraft();
         StopFragmentTool(true);
         drawingTrigger = false; drawingColliderId = null; triggerStart = triggerEnd = null; colliderPoints.Clear();
         chosenCharacter = document.Map.Player.Asset;

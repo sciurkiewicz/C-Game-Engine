@@ -54,7 +54,9 @@ sealed partial class MapData
     public PlayerStart Player { get; set; } = new();
     public RuntimeSettings Runtime { get; set; } = new();
     static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true };
-    static readonly JsonSerializerOptions MetadataOptions = new()
+    static readonly JsonSerializerOptions MetadataOptions = CreateMetadataOptions(false);
+    static readonly JsonSerializerOptions ChangeMetadataOptions = CreateMetadataOptions(true);
+    static JsonSerializerOptions CreateMetadataOptions(bool omitGrid) => new()
     {
         TypeInfoResolver = new DefaultJsonTypeInfoResolver
         {
@@ -62,11 +64,12 @@ sealed partial class MapData
             {
                 if (info.Type == typeof(MapData))
                     foreach (var property in info.Properties)
-                        if (property.Name is nameof(Tiles) or nameof(Heights) or nameof(WaterCells)) property.ShouldSerialize = (_, _) => false;
+                        if (property.Name is nameof(Tiles) or nameof(Heights) or nameof(WaterCells) || omitGrid && property.Name == nameof(WallCells)) property.ShouldSerialize = (_, _) => false;
             } }
         }
     };
     public string SerializeMetadata() => JsonSerializer.Serialize(this, MetadataOptions);
+    public string SerializeChangeMetadata() => JsonSerializer.Serialize(this, ChangeMetadataOptions);
     public static MapData ParseMetadata(string json) => JsonSerializer.Deserialize<MapData>(json, JsonOptions) ?? throw new InvalidDataException("Empty map.");
     public string Serialize() => JsonSerializer.Serialize(this, JsonOptions);
     public static MapData Parse(string json)
@@ -119,6 +122,8 @@ sealed partial class MapData
         ValidateInventory();
         ValidateWorldFeatures();
         ValidateRoads();
+        ValidateWalls();
+        ValidateWallCells();
     }
     static bool ValidHeight(float h) => float.IsFinite(h) && h >= SceneObject.MinHeight && h <= SceneObject.MaxHeight;
     public static MapData CreateEmpty(int width = 48, int depth = 48, MapType type = MapType.OpenWorld)
@@ -160,7 +165,7 @@ sealed partial class MapDocument(MapData initial, bool saved)
 {
     public MapData Map { get; private set; } = initial;
     readonly List<MapSnapshot> undo = [], redo = [];
-    string savedState = saved ? initial.SerializeMetadata() : "";
+    string savedState = saved ? initial.SerializeChangeMetadata() : "";
     string[]? savedTiles = saved ? (string[])initial.Tiles.Clone() : null;
     float[] savedHeights = saved ? (float[])initial.Heights.Clone() : [];
     byte[] savedWater = saved ? initial.CopyWaterCells() : [];
@@ -168,7 +173,7 @@ sealed partial class MapDocument(MapData initial, bool saved)
     int changedTiles;
     int changedHeights;
     int changedWater;
-    public bool Dirty => savedTiles == null || changedTiles != 0 || changedHeights != 0 || changedWater != 0 || Map.SerializeMetadata() != savedState;
+    public bool Dirty => savedTiles == null || changedTiles != 0 || changedHeights != 0 || changedWater != 0 || GridWallsDirty || Map.SerializeChangeMetadata() != savedState;
     public bool CanUndo => undo.Count > 0;
     public bool CanRedo => redo.Count > 0;
     public void Checkpoint()
@@ -207,14 +212,16 @@ sealed partial class MapDocument(MapData initial, bool saved)
     }
     public void Save(string path)
     {
-        Map.Save(path); savedState = Map.SerializeMetadata(); savedTiles = (string[])Map.Tiles.Clone(); changedTiles = 0;
+        Map.Save(path); savedState = Map.SerializeChangeMetadata(); savedTiles = (string[])Map.Tiles.Clone(); changedTiles = 0;
+        SaveWallState();
         SaveHeightState();
         savedWater = Map.CopyWaterCells(); changedWater = 0; EndSculptStroke();
     }
     public void Load(string path)
     {
         var loaded = MapData.Load(path);
-        Map = loaded; undo.Clear(); redo.Clear(); savedState = Map.SerializeMetadata(); savedTiles = (string[])Map.Tiles.Clone(); changedTiles = 0;
+        Map = loaded; undo.Clear(); redo.Clear(); savedState = Map.SerializeChangeMetadata(); savedTiles = (string[])Map.Tiles.Clone(); changedTiles = 0;
+        SaveWallState();
         SaveHeightState();
         savedWater = Map.CopyWaterCells(); changedWater = 0; EndSculptStroke();
     }

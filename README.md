@@ -29,6 +29,8 @@ Wybierz grafikę po lewej i kliknij mapę, aby wstawić obiekt. Narzędzie **Sel
 
 **Ctrl+Shift+C / hamburger → Map fragments** zaznacza i kopiuje cały obszar: teren, wysokości, wodę, obiekty, NPC, skrzynie, potwory, drogi i elementy świata. **Ctrl+V** uruchamia podgląd; klikaj, aby wklejać niezależne kopie. **Paste options** wybiera kategorie oraz dodawanie lub zastępowanie zawartości, **Save fragment / Fragment library** zapisują i otwierają gotowe obozy czy fragmenty wiosek w `Editor/fragments/`. Jedno Ctrl+Z cofa całe wklejenie.
 
+**Ściany / 0 → Siatka** maluje pełne bloki ścian po kratkach 1 × 1 m; puste kratki tworzą korytarze lochu. LMB maluje, Shift+LMB wykuwa przejście, a **Obrys pokoju** rysuje obwód przeciągniętego prostokąta. Skała jaskiniowa ma nierówne boki i grzbiet z regulowaną intensywnością; mur i drewno pozostają regularne. Tryb **Punkty** zachowuje dotychczasowe rysowanie ścian przez węzły, wysokość, grubość i zamknięte obrysy. Oba rodzaje ścian działają z minimapą, kopiowaniem fragmentów, zapisem i cofaniem. W grze blokują ruch i ciosy, reagują na światło i mogą odsłaniać zasłoniętego bohatera.
+
 **World** otwiera ustawienia oświetlenia, cieni, zanikania przeszkód, cyklu dnia i nocy, dźwięku przestrzennego, triggerów, prefabrykatów oraz kształtów kolizji. Shift+klik zaznacza grupy; prefabrykaty zapisują się w `Editor/prefabs/`. Triggery i wielokąty kolizji rysuje się bezpośrednio na mapie. W Play i Runtime **F6** zapisuje postęp, **F9** go przywraca. Teren korzysta z fragmentów siatki GPU 16 × 16 i przebudowuje je po zmianach wysokości. Szczegóły obsługi są w [instrukcji edytora](Editor/README.md).
 
 Osobna gra odczytuje ostatnio zapisaną mapę:

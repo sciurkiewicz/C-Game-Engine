@@ -65,6 +65,10 @@ static class CollisionGeometry
         }
         if (PointSegmentDistance(new(item.X, item.Z), from, to) > Radius(item) + radius) return false;
         var vertices = Vertices(item);
+        return BlocksPolygon(vertices, from, to, radius);
+    }
+    public static bool BlocksPolygon(Vector2[] vertices, Vector2 from, Vector2 to, float radius)
+    {
         float Clearance(Vector2 p)
         {
             float distance = float.MaxValue;

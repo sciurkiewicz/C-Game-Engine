@@ -34,6 +34,8 @@ sealed class MapFragment
     public float WaterLevel { get; set; }
     public ScenePrefab Actors { get; set; } = new();
     public List<RoadData> Roads { get; set; } = [];
+    public List<WallData> Walls { get; set; } = [];
+    public List<GridWallCell> WallCells { get; set; } = [];
     public List<PointLightData> Lights { get; set; } = [];
     public List<SoundEmitterData> Sounds { get; set; } = [];
     public List<FragmentTrigger> Triggers { get; set; } = [];
@@ -78,6 +80,9 @@ sealed class MapFragment
             else fragment.Actors.Objects.Add(copy);
         }
         fragment.Roads = FragmentRoads.Capture(map.Roads, bounds);
+        fragment.Walls = FragmentWalls.Capture(map.Walls, bounds);
+        fragment.WallCells = map.WallCells.Where(c => c.X >= region.X && c.Z >= region.Z && c.X < region.X + region.Width && c.Z < region.Z + region.Depth)
+            .Select(c => c.Copy(c.X - region.X, c.Z - region.Z)).ToList();
         foreach (var light in map.Lights.Where(l => bounds.Contains(l.X, l.Z)))
         { var copy = ScenePrefab.Clone(light); copy.X -= bounds.MinX; copy.Z -= bounds.MinZ; fragment.Lights.Add(copy); }
         foreach (var sound in map.Sounds.Where(s => bounds.Contains(s.X, s.Z)))
@@ -108,6 +113,12 @@ sealed class MapFragment
                 (t.LocalDestination && (t.Data.Action is not (TriggerAction.Teleport or TriggerAction.SpawnMonster) || !Contains(t.Data.DestinationX, t.Data.DestinationZ)))))
             throw new InvalidDataException("Invalid map fragment dimensions, terrain or contents.");
         foreach (var road in Roads) road.Validate(Contains);
+        if (Walls == null || Walls.Count > WallData.Limit || Walls.Any(w => w == null) || Walls.Select(w => w.Id).Distinct().Count() != Walls.Count)
+            throw new InvalidDataException("Invalid fragment walls.");
+        foreach (var wall in Walls) wall.Validate(Contains);
+        if (WallCells == null || WallCells.Count > GridWallCell.Limit || WallCells.Any(c => c == null) || WallCells.Select(c => (c.X, c.Z)).Distinct().Count() != WallCells.Count)
+            throw new InvalidDataException("Invalid fragment dungeon walls.");
+        foreach (var cell in WallCells) cell.Validate(Width, Depth);
         // Validate nested actor, inventory, dialogue and world-feature data in a tiny map.
         var test = MapData.CreateEmpty(4, 4); var actors = ScenePrefab.Clone(Actors);
         test.Objects = actors.Objects; test.Npcs = actors.Npcs; test.Chests = actors.Chests; test.Monsters = actors.Monsters;

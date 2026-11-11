@@ -5,6 +5,7 @@ sealed record FragmentPasteOptions
     public bool Terrain { get; set; } = true;
     public bool Actors { get; set; } = true;
     public bool Roads { get; set; } = true;
+    public bool Walls { get; set; } = true;
     public bool WorldFeatures { get; set; } = true;
     public bool ReplaceContents { get; set; }
     public bool AlignWater { get; set; } = true;
@@ -19,7 +20,7 @@ sealed partial class MapDocument
 {
     public static string? FragmentPasteIssue(MapData map, MapFragment fragment, MapRegion region, FragmentPasteOptions options)
     {
-        if (!options.Terrain && !options.Actors && !options.Roads && !options.WorldFeatures) return "Choose at least one category to paste.";
+        if (!options.Terrain && !options.Actors && !options.Roads && !options.Walls && !options.WorldFeatures) return "Choose at least one category to paste.";
         if (region.Width != fragment.Width || region.Depth != fragment.Depth || !region.Fits(map)) return "The whole fragment must fit inside the map.";
         if (!MapData.FiniteRange(options.HeightOffset, -96, 96)) return "Invalid fragment height offset.";
         float shift = options.ElevationShift(fragment, map);
@@ -36,6 +37,7 @@ sealed partial class MapDocument
             Retained(map.Sounds, e => e.X, e => e.Z, true) + fragment.Sounds.Count > 256 ||
             Retained(map.Triggers, e => e.X, e => e.Z, true) + fragment.Triggers.Count > 1000)) return "The fragment would exceed the map's world-feature limits.";
         if (options.Roads && !options.ReplaceContents && map.Roads.Count + fragment.Roads.Count > 128) return "The fragment would exceed the road limit (128).";
+        if (options.Walls && !options.ReplaceContents && map.Walls.Count + fragment.Walls.Count > WallData.Limit) return "The fragment would exceed the wall limit (256).";
         return null;
     }
     public FragmentPasteResult PasteFragment(MapFragment fragment, MapRegion region, FragmentPasteOptions options)
@@ -54,7 +56,9 @@ sealed partial class MapDocument
             Chests = Keep(Map.Chests, e => e.X, e => e.Z, options.Actors), Monsters = Keep(Map.Monsters, e => e.X, e => e.Z, options.Actors),
             Lights = Keep(Map.Lights, e => e.X, e => e.Z, options.WorldFeatures), Sounds = Keep(Map.Sounds, e => e.X, e => e.Z, options.WorldFeatures),
             Triggers = Keep(Map.Triggers, e => e.X, e => e.Z, options.WorldFeatures),
-            Roads = Replace(options.Roads) ? FragmentRoads.Outside(Map.Roads, bounds, new(-Map.Width / 2f, -Map.Depth / 2f, Map.Width / 2f, Map.Depth / 2f)) : Map.Roads.ToList()
+            Roads = Replace(options.Roads) ? FragmentRoads.Outside(Map.Roads, bounds, new(-Map.Width / 2f, -Map.Depth / 2f, Map.Width / 2f, Map.Depth / 2f)) : Map.Roads.ToList(),
+            Walls = Replace(options.Walls) ? FragmentWalls.Outside(Map.Walls, bounds, new(-Map.Width / 2f, -Map.Depth / 2f, Map.Width / 2f, Map.Depth / 2f)) : Map.Walls.ToList(),
+            WallCells = Map.WallCells.Where(c => !Replace(options.Walls) || c.X < region.X || c.X >= region.X + region.Width || c.Z < region.Z || c.Z >= region.Z + region.Depth).ToList()
         };
         var placed = options.Actors ? ScenePrefab.Clone(fragment.Actors) : new ScenePrefab();
         var ids = new Dictionary<string, string>();
@@ -71,7 +75,19 @@ sealed partial class MapDocument
                 var copy = ScenePrefab.Clone(road); copy.Id = Guid.NewGuid().ToString("N");
                 copy.Points = copy.Points.Select(p => new GroundPoint2(p.X + bounds.MinX, p.Z + bounds.MinZ)).ToList(); metadata.Roads.Add(copy);
             }
+        if (options.Walls)
+            foreach (var wall in fragment.Walls)
+            {
+                var copy = ScenePrefab.Clone(wall); copy.Id = Guid.NewGuid().ToString("N");
+                copy.Points = copy.Points.Select(p => new GroundPoint2(p.X + bounds.MinX, p.Z + bounds.MinZ)).ToList(); metadata.Walls.Add(copy);
+            }
         int disabled = 0;
+        if (options.Walls)
+        {
+            var cells = metadata.WallCells.ToDictionary(c => (c.X, c.Z));
+            foreach (var c in fragment.WallCells) cells[(c.X + region.X, c.Z + region.Z)] = c.Copy(c.X + region.X, c.Z + region.Z);
+            metadata.WallCells = cells.Values.OrderBy(c => c.Z).ThenBy(c => c.X).ToList();
+        }
         if (options.WorldFeatures)
         {
             foreach (var light in fragment.Lights)
@@ -128,7 +144,7 @@ sealed partial class MapDocument
             for (int x = 0; x <= region.Width; x++) ChangeHeight(region.X + x, region.Z + z, fragment.VertexHeight(x, z) + shift);
         }
         Map.Objects = metadata.Objects; Map.Npcs = metadata.Npcs; Map.Chests = metadata.Chests; Map.Monsters = metadata.Monsters;
-        Map.Lights = metadata.Lights; Map.Sounds = metadata.Sounds; Map.Triggers = metadata.Triggers; Map.Roads = metadata.Roads;
+        Map.Lights = metadata.Lights; Map.Sounds = metadata.Sounds; Map.Triggers = metadata.Triggers; Map.Roads = metadata.Roads; Map.Walls = metadata.Walls; Map.WallCells = metadata.WallCells;
         return new(placed.Entities.ToArray(), disabled, true);
     }
 }

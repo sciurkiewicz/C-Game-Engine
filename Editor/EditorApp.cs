@@ -2,7 +2,7 @@ using System.Numerics;
 using Raylib_cs;
 using static Raylib_cs.Raylib;
 
-enum EditTool { Select, Place, Ground, Player, NPC, Sculpt, Water, Chest, Monster }
+enum EditTool { Select, Place, Ground, Player, NPC, Sculpt, Water, Chest, Monster, Walls }
 
 sealed partial class EditorApp : IDisposable
 {
@@ -159,6 +159,7 @@ sealed partial class EditorApp : IDisposable
         if (ModalOpen) return;
         if (ctrl && IsKeyPressed(KeyboardKey.Z)) Undo();
         if (ctrl && IsKeyPressed(KeyboardKey.Y)) Redo();
+        if (WallShortcuts(ctrl)) return;
         if (ctrl && IsKeyPressed(KeyboardKey.D)) Duplicate();
         if (IsKeyPressed(KeyboardKey.Delete)) Delete();
         if (IsKeyPressed(KeyboardKey.One)) { StopFragmentTool(); tool = EditTool.Select; }
@@ -170,6 +171,7 @@ sealed partial class EditorApp : IDisposable
         if (IsKeyPressed(KeyboardKey.Seven)) tool = EditTool.Water;
         if (IsKeyPressed(KeyboardKey.Eight)) tool = EditTool.Chest;
         if (IsKeyPressed(KeyboardKey.Nine)) tool = EditTool.Monster;
+        if (IsKeyPressed(KeyboardKey.Zero)) OpenWallTool();
         if (IsKeyPressed(KeyboardKey.G)) grid = !grid;
         if (IsKeyPressed(KeyboardKey.M)) ToggleMinimap();
         if (IsKeyPressed(KeyboardKey.V)) CycleEditorView();
@@ -178,8 +180,9 @@ sealed partial class EditorApp : IDisposable
         if (IsKeyPressed(KeyboardKey.Escape)) { tool = EditTool.Select; selectedId = null; selectedIds.Clear(); activePrefab = null; }
         if (UpdateMinimapInput()) return;
         if (UpdateEditorCamera(dt, ctrl))
-        { document.EndSculptStroke(); gesture = dragging = dragArmed = false; marqueeStart = null; fragmentDragStart = null; return; }
+        { document.EndSculptStroke(); EndGridWallStroke(); gesture = dragging = dragArmed = false; marqueeStart = null; fragmentDragStart = null; return; }
         if (UpdateFragmentTool()) return;
+        if (UpdateWallTool()) return;
         if (UpdateMarquee()) return;
         if (!IsMouseButtonDown(MouseButton.Left))
         {
@@ -293,6 +296,7 @@ sealed partial class EditorApp : IDisposable
         {
             DrawWorldGizmos(view);
             DrawRoadPreview();
+            DrawWallDraft(view);
             DrawFragmentPreview(view);
             foreach (var selected in SelectionGroup)
                 renderer.DrawOutline(view, selected, Accent, document.Map);
@@ -380,7 +384,9 @@ sealed partial class EditorApp : IDisposable
         int x = 16, width = ToolbarToolWidth;
         foreach (var t in Enum.GetValues<EditTool>())
         {
-            if (Button($"{(int)t + 1}  {t}", x, 46, width, tool == t, play == null)) { StopFragmentTool(); tool = t; activePrefab = null; }
+            string title = t == EditTool.Walls ? "0 Ściany" : $"{(int)t + 1}  {t}";
+            if (Button(title, x, 46, width, tool == t, play == null))
+            { if (t == EditTool.Walls) OpenWallTool(); else { EndEditorGesture(); StopFragmentTool(); tool = t; activePrefab = null; } }
             x += width + 2;
         }
         if (Button("Undo", x + 8, 46, 65, false, play == null && document.CanUndo)) Undo();
@@ -395,6 +401,7 @@ sealed partial class EditorApp : IDisposable
     {
         DrawRectangle(0, Top, Left, GetScreenHeight() - Top - Bottom, Panel);
         if (DrawFragmentPalette()) return;
+        if (tool == EditTool.Walls) { DrawWallPalette(); return; }
         Label(tool == EditTool.Ground ? "GROUND MATERIALS" : tool == EditTool.Player ? "PLAYER" : tool == EditTool.NPC ? "NPC" : tool == EditTool.Monster ? "MONSTER" : tool == EditTool.Chest ? "CHESTS" : tool == EditTool.Sculpt ? "TERRAFORM" : tool == EditTool.Water ? "3D WATER" : "ASSET LIBRARY", 16, 108, 15, Text);
         if (tool == EditTool.Chest)
         {
@@ -509,6 +516,7 @@ sealed partial class EditorApp : IDisposable
             return;
         }
         if (FragmentToolActive) DrawFragmentInspector(x);
+        else if (tool == EditTool.Walls) { DrawWallInspector(x); return; }
         else if (tool == EditTool.Ground && groundMode == GroundMode.Roads) DrawRoadInspector(x);
         else if (tool == EditTool.Ground && groundMode == GroundMode.Biomes) DrawBiomeInspector(x);
         else if (tool == EditTool.Ground)
@@ -741,13 +749,13 @@ sealed partial class EditorApp : IDisposable
             selectedIds.Clear(); activePrefab = null;
             drawingTrigger = false; drawingColliderId = null; triggerStart = triggerEnd = null; colliderPoints.Clear();
             chosenTerrain = document.Map.Tiles[0]; tool = EditTool.Select; groundScroll = 0;
-            EndEditorGesture(); ResetRoadDraft(); StopFragmentTool(true); autosaveSnapshot = null;
+            EndEditorGesture(); ResetRoadDraft(); ResetWallDraft(); StopFragmentTool(true); autosaveSnapshot = null;
             ApplyRuntimeSettings(); status = $"Nowa mapa: {MapTypeName(newMapType)}, {newWidth} x {newDepth}.";
             return;
         }
         try
         {
-            document.Load(mapPath); EndEditorGesture(); ResetRoadDraft(); StopFragmentTool(true); autosaveSnapshot = null; selectedId = null; chosenCharacter = document.Map.Player.Asset;
+            document.Load(mapPath); EndEditorGesture(); ResetRoadDraft(); ResetWallDraft(); StopFragmentTool(true); autosaveSnapshot = null; selectedId = null; chosenCharacter = document.Map.Player.Asset;
             selectedIds.Clear(); activePrefab = null;
             focus = document.Map.GroundPosition(document.Map.Player.X, document.Map.Player.Z); ApplyRuntimeSettings(); status = "Map loaded.";
         }
@@ -756,6 +764,7 @@ sealed partial class EditorApp : IDisposable
     void Undo()
     {
         EndEditorGesture();
+        ResetWallDraft();
         var settings = document.Map.Runtime;
         document.Undo(); chosenCharacter = document.Map.Player.Asset; gesture = dragging = dragArmed = false;
         if (settings != document.Map.Runtime) ApplyRuntimeSettings();
@@ -763,6 +772,7 @@ sealed partial class EditorApp : IDisposable
     void Redo()
     {
         EndEditorGesture();
+        ResetWallDraft();
         var settings = document.Map.Runtime;
         document.Redo(); chosenCharacter = document.Map.Player.Asset; gesture = dragging = dragArmed = false;
         if (settings != document.Map.Runtime) ApplyRuntimeSettings();

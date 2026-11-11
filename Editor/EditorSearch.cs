@@ -39,7 +39,7 @@ sealed partial class EditorApp
     bool sceneSearchOpen;
     int sceneSearchScroll;
     string sceneFilter = "All";
-    readonly string[] sceneFilters = ["All", "Object", "NPC", "Chest", "Monster", "Trigger", "Light", "Sound", "Road"];
+    readonly string[] sceneFilters = ["All", "Object", "NPC", "Chest", "Monster", "Trigger", "Light", "Sound", "Road", "Wall"];
     Rectangle SceneSearchBounds => new(GetScreenWidth() / 2 - 380, GetScreenHeight() / 2 - 280, 760, 560);
     void OpenSceneSearch()
     {
@@ -59,6 +59,8 @@ sealed partial class EditorApp
         foreach (var sound in map.Sounds) yield return new(sound.Id, "Sound", sound.Name, sound.Clip, map.GroundPosition(sound.X, sound.Z));
         foreach (var road in map.Roads) yield return new(road.Id, "Road", road.Name, road.Material,
             map.GroundPosition(road.Points.Average(p => p.X), road.Points.Average(p => p.Z)));
+        foreach (var wall in map.Walls) yield return new(wall.Id, "Wall", wall.Name, WallStyleName(wall.Style),
+            map.GroundPosition(wall.Points.Average(p => p.X), wall.Points.Average(p => p.Z)));
     }
     SceneSearchEntry[] SceneResults() => SceneEntries().Where(e => (sceneFilter == "All" || sceneFilter == e.Kind) &&
         SearchInput.Matches(sceneSearch.Value, e.Name, e.Kind, e.Asset, e.Id)).ToArray();
@@ -72,6 +74,7 @@ sealed partial class EditorApp
         { selectedId = entry.Id; selectedIds.Add(entry.Id); tool = EditTool.Select; }
         else if (entry.Kind == "Player") tool = EditTool.Player;
         else if (entry.Kind == "Road") EditRoad(document.Map.Roads.First(r => r.Id == entry.Id));
+        else if (entry.Kind == "Wall") EditWall(document.Map.Walls.First(w => w.Id == entry.Id));
         else
         {
             OpenWorldTools(entry.Kind == "Trigger" ? "Triggers" : entry.Kind == "Light" ? "Lights" : "Sounds");

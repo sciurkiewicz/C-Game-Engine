@@ -36,11 +36,17 @@ try
     bool workflowTest = args.Contains("--workflow-interaction-test");
     bool landscapeTest = args.Contains("--landscape-interaction-test");
     bool fragmentTest = args.Contains("--fragment-interaction-test");
-    bool interactionTest = args.Contains("--interaction-test") || inventoryTest || dialogueLinkTest || dialogueSequenceTest || monsterTest || launchOptionsTest || worldTest || newMapTest || worldGpuTest || workflowTest || landscapeTest || fragmentTest;
-    string mapPath = interactionTest ? Path.Combine(ProjectPaths.Root, "Editor", "obj", "interaction-test.json") :
+    bool wallTest = args.Contains("--wall-interaction-test");
+    bool gridWallTest = args.Contains("--grid-wall-interaction-test");
+    bool wallPerformance = args.Contains("--wall-performance-test");
+    bool interactionTest = args.Contains("--interaction-test") || inventoryTest || dialogueLinkTest || dialogueSequenceTest || monsterTest || launchOptionsTest || worldTest || newMapTest || worldGpuTest || workflowTest || landscapeTest || fragmentTest || wallTest || gridWallTest;
+    string mapPath = wallPerformance ? Path.Combine(ProjectPaths.Root, "Editor", "obj", "wall-performance-test.json") : interactionTest ? Path.Combine(ProjectPaths.Root, "Editor", "obj", "interaction-test.json") :
         mapArgument >= 0 ? Path.GetFullPath(args[mapArgument + 1]) : ProjectPaths.MapFile;
-    using var editor = new EditorApp(mapPath, interactionTest || args.Contains("--smoke-test"));
-    if (fragmentTest) editor.RunFragmentInteractionChecks();
+    using var editor = new EditorApp(mapPath, interactionTest || wallPerformance || args.Contains("--smoke-test"));
+    if (wallPerformance) editor.RunWallPerformanceChecks(args.Contains("--baseline") ? "baseline" : "optimized");
+    else if (gridWallTest) editor.RunGridWallInteractionChecks();
+    else if (wallTest) editor.RunWallInteractionChecks();
+    else if (fragmentTest) editor.RunFragmentInteractionChecks();
     else if (landscapeTest) editor.RunLandscapeInteractionChecks();
     else if (workflowTest) editor.RunWorkflowInteractionChecks();
     else if (worldGpuTest) editor.RunWorldGpuChecks();

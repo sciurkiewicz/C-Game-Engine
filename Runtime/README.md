@@ -40,6 +40,14 @@ Wzór tekstury podłoża jest ułożony tak, aby góra PNG wskazywała w głąb 
 
 Mapy mogą zawierać edytowalne drogi w polu `Roads`: punkty krzywej, materiał, szerokość i miękkość brzegu. Runtime rysuje je na aktualnej powierzchni terenu, również na zboczach po erozji, z takim samym blendowaniem jak w edytorze i Play. Starsze mapy mają pustą listę dróg. Wyniki malowania biomami i erozji korzystają ze zwykłych materiałów, obiektów oraz wysokości mapy.
 
+Ściany jaskiń i budynków zapisują się w mapie w tablicy `Walls`: nazwa, styl `Cave` / `Masonry` / `Wood`, wysokość, grubość, punkty przebiegu, zamknięty obrys, kolizja i odsłanianie gracza. Edytuje je zakładka **Ściany / 0**. To stałe bryły z bokami i wierzchem, podążające za podłożem, oświetlane punktowo i obsługiwane przez efekty graficzne gry. Blokują ruch i ataki obu stron; potwory szukają przejścia wokół nich. Materiały są proceduralne i nie wymagają dodatkowych PNG. Starsze mapy bez `Walls` działają bez zmian.
+
+Tryb **Ściany → Siatka** zapisuje osobną tablicę `WallCells`: indeksy kratki X/Z, materiał, wysokość, nierówność skały, kolizja i odsłanianie postaci. Bloki mają 1 × 1 m, a puste kratki stanowią korytarze. Skała ma deterministycznie zdeformowane boki i wierzch; mur oraz drewno pozostają regularne. Wspólne krawędzie łączą sąsiednie bloki, niewidoczne powierzchnie wewnętrzne są pomijane, a kolizja uwzględnia nierówne krawędzie. Starsze mapy otrzymują pustą siatkę. [GridWallData.cs](World/GridWallData.cs) opisuje dane i malowanie, [GridWallGeometry.cs](World/GridWallGeometry.cs) buduje bryły i sprawdza ruch.
+
+[GridWallIndex.cs](World/GridWallIndex.cs) przechowuje indeks kratek i wersje lokalnych zmian. [GridWallChunkCache.cs](World/GridWallChunkCache.cs) łączy bryły w siatki GPU 8 × 8, grupuje materiały i pomija fragmenty poza widokiem. Zmienione kratki oraz rzeźbienie terenu odświeżają tylko odpowiednie bufory. Odsłanianie postaci sprawdza ściany wzdłuż linii kamera–bohater i aktualizuje maskę kolorów; promienie światła używają tych samych siatek. Cache zachowuje najwyżej 96 niewidocznych/bieżących fragmentów łącznie, z wyjątkiem sytuacji, gdy większa liczba jest widoczna jednocześnie; starsze niewidoczne siatki oraz ich geometria CPU są zwalniane.
+
+`dotnet run --project Runtime -- --wall-test` sprawdza geometrię, kolizje, teren, cofanie, zapis i walkę. `--wall-gpu-test` sprawdza piksele materiałów, bryły z obu stron, światła w jaskini i budynku, wygaszanie przed graczem i renderowanie przez efekty gry. `--grid-wall-test` sprawdza bloki lochów, wykuwanie przejść, korytarze, geometrię jaskini i historię zmian; `--grid-wall-gpu-test` rysuje naturalną jaskinię oraz regularny labirynt w obu rzutach i przez efekty gry.
+
 ## Sterowanie
 
 - WASD lub strzałki — chodzenie.

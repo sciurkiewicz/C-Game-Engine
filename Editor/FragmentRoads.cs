@@ -22,7 +22,7 @@ static class FragmentRoads
         bool hit = Slab(a.X, b.X - a.X, bounds.MinX, bounds.MaxX) && Slab(a.Y, b.Y - a.Y, bounds.MinZ, bounds.MaxZ);
         enter = first; leave = last; return hit;
     }
-    static List<List<Vector2>> Pieces(IReadOnlyList<Vector2> curve, FragmentBounds bounds, bool inside)
+    internal static List<List<Vector2>> Pieces(IReadOnlyList<Vector2> curve, FragmentBounds bounds, bool inside)
     {
         var pieces = new List<List<Vector2>>();
         List<Vector2>? current = null;

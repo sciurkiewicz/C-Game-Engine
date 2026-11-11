@@ -1,6 +1,19 @@
 ﻿using Raylib_cs;
 using static Raylib_cs.Raylib;
 
+if (args.Contains("--grid-wall-test"))
+{
+    GridWallChecks.Run();
+    WallCacheChecks.Run();
+    return;
+}
+
+if (args.Contains("--wall-test"))
+{
+    WallChecks.Run();
+    return;
+}
+
 if (args.Contains("--graphics-test"))
 {
     GraphicsChecks.Run();
@@ -74,6 +87,21 @@ SetTargetFPS(60);
 try
 {
     using var assets = new WorldAssets();
+    if (args.Contains("--wall-cache-gpu-test"))
+    {
+        new WorldRenderer(assets).RunWallCacheGpuChecks();
+        return;
+    }
+    if (args.Contains("--grid-wall-gpu-test"))
+    {
+        GridWallGpuChecks.Run(assets);
+        return;
+    }
+    if (args.Contains("--wall-gpu-test"))
+    {
+        WallGpuChecks.Run(assets);
+        return;
+    }
     if (args.Contains("--graphics-gpu-test"))
     {
         GraphicsGpuChecks.Run(assets);

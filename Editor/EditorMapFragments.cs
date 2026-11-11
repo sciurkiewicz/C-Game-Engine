@@ -29,7 +29,7 @@ sealed partial class EditorApp
         try
         {
             fragmentClipboard = MapFragment.Capture(document.Map, region); fragmentMode = FragmentToolMode.Ready;
-            status = $"Copied {region.Width} x {region.Depth} tiles, {fragmentClipboard.Actors.Entities.Count()} actors and {fragmentClipboard.Roads.Count} roads. Ctrl+V: paste.";
+            status = $"Copied {region.Width} x {region.Depth} tiles, {fragmentClipboard.Actors.Entities.Count()} actors, {fragmentClipboard.Roads.Count} roads, {fragmentClipboard.Walls.Count} walls. Ctrl+V: paste.";
         }
         catch (InvalidDataException ex) { status = "Cannot copy area: " + ex.Message; }
     }
@@ -125,7 +125,7 @@ sealed partial class EditorApp
         Label($"Clipboard: {fragment.Width} x {fragment.Depth} tiles", x, 248, 13, Accent);
         Label($"Actors: {fragment.Actors.Entities.Count()}  /  Roads: {fragment.Roads.Count}", x, 276, 13, Text);
         Label($"Lights: {fragment.Lights.Count}  /  Sounds: {fragment.Sounds.Count}", x, 304, 13, Text);
-        Label($"Triggers: {fragment.Triggers.Count}", x, 332, 13, Text);
+        Label($"Triggers: {fragment.Triggers.Count} / Walls: {fragment.Walls.Count} + {fragment.WallCells.Count} cells", x, 332, 12, Text, 220);
         if (fragmentMode == FragmentToolMode.Pasting)
         {
             string? issue = MapDocument.FragmentPasteIssue(document.Map, fragment, fragmentDestination, fragmentOptions);
@@ -190,6 +190,22 @@ sealed partial class EditorApp
                     var curve = road.Curve;
                     for (int i = 1; i < curve.Length; i++) DrawLine3D(Point(curve[i - 1].X, curve[i - 1].Y), Point(curve[i].X, curve[i].Y), color);
                 }
+            if (fragmentOptions.Walls)
+            {
+                foreach (var wall in fragment.Walls)
+                    for (int i = 0; i < wall.Points.Count - (wall.Closed ? 0 : 1); i++)
+                    {
+                        var a = wall.Points[i]; var b = wall.Points[(i + 1) % wall.Points.Count];
+                        var pa = Point(a.X, a.Z); var pb = Point(b.X, b.Z);
+                        DrawLine3D(pa, pb, color); DrawLine3D(pa + Vector3.UnitY * wall.Height, pb + Vector3.UnitY * wall.Height, color);
+                        DrawLine3D(pa, pa + Vector3.UnitY * wall.Height, color);
+                    }
+                foreach (var cell in fragment.WallCells)
+                {
+                    var p = Point(cell.X + .5f, cell.Z + .5f) + Vector3.UnitY * (cell.Height / 2);
+                    DrawCubeWires(p, 1, cell.Height, 1, color);
+                }
+            }
             if (fragmentOptions.WorldFeatures)
             {
                 foreach (var light in fragment.Lights) DrawSphereWires(Point(light.X, light.Z) + Vector3.UnitY * light.Height, .2f, 4, 8, color);

@@ -72,7 +72,8 @@ sealed partial class EditorApp
         { if (Button(title + (current ? ": ON" : ": OFF"), x + 24, y + row, 612, current, enabled, true)) change(!current); }
         Toggle("Terrain, heights and water", fragmentOptions.Terrain, 104, value => fragmentOptions.Terrain = value);
         Toggle("Objects, NPC, chests and monsters", fragmentOptions.Actors, 146, value => fragmentOptions.Actors = value);
-        Toggle("Roads", fragmentOptions.Roads, 188, value => fragmentOptions.Roads = value);
+        if (Button("Roads: " + (fragmentOptions.Roads ? "ON" : "OFF"), x + 24, y + 188, 298, fragmentOptions.Roads, enabled, true)) fragmentOptions.Roads = !fragmentOptions.Roads;
+        if (Button("Walls: " + (fragmentOptions.Walls ? "ON" : "OFF"), x + 334, y + 188, 302, fragmentOptions.Walls, enabled, true)) fragmentOptions.Walls = !fragmentOptions.Walls;
         Toggle("Lights, sounds and triggers", fragmentOptions.WorldFeatures, 230, value => fragmentOptions.WorldFeatures = value);
         Toggle("Replace destination contents", fragmentOptions.ReplaceContents, 286, value => fragmentOptions.ReplaceContents = value);
         Label("Replacement affects selected categories. Terrain is overwritten when enabled.", x + 24, y + 328, 12, Muted);
@@ -82,7 +83,7 @@ sealed partial class EditorApp
         Label(fragmentOptions.HeightOffset.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture), x + 440, y + 417, 14, Accent);
         if (Button("+", x + 598, y + 408, 38, false, enabled && fragmentOptions.Terrain, true)) fragmentOptions.HeightOffset = Math.Min(96, fragmentOptions.HeightOffset + .25f);
         if (Button("Defaults", x + 24, y + 490, 180, false, enabled, true))
-        { fragmentOptions.Terrain = fragmentOptions.Actors = fragmentOptions.Roads = fragmentOptions.WorldFeatures = fragmentOptions.AlignWater = true; fragmentOptions.ReplaceContents = false; fragmentOptions.HeightOffset = 0; }
+        { fragmentOptions.Terrain = fragmentOptions.Actors = fragmentOptions.Roads = fragmentOptions.Walls = fragmentOptions.WorldFeatures = fragmentOptions.AlignWater = true; fragmentOptions.ReplaceContents = false; fragmentOptions.HeightOffset = 0; }
         if (Button("Done / Esc", x + 456, y + 490, 180, true, enabled, true)) fragmentOptionsOpen = false;
     }
 }

@@ -21,10 +21,15 @@ sealed class WorldAssets : IDisposable
     public Shader SpriteShader { get; }
     public Shader ShadowShader { get; }
     public Shader WaterShader { get; }
+    public Shader WallShader { get; }
     TerrainBlending? terrainBlending;
     public TerrainBlending TerrainBlending => terrainBlending ??= new();
     TerrainChunkCache? terrainMeshes;
     public TerrainChunkCache TerrainMeshes => terrainMeshes ??= new();
+    GridWallChunkCache? wallMeshes;
+    public GridWallChunkCache WallMeshes => wallMeshes ??= new();
+    public void SynchronizeWallMeshes(MapData map, object renderer)
+    { wallMeshes?.Synchronize(map); wallMeshes?.UseFadesFor(renderer); }
     public WorldAssets()
     {
         SpriteShader = LoadShaderFromMemory(GraphicsShaders.SpriteVertex, WorldLighting.FragmentPrelude + GraphicsShaders.SpriteFragment);
@@ -35,6 +40,8 @@ sealed class WorldAssets : IDisposable
             throw new InvalidOperationException("Cannot load contact shadow shader.");
         WaterShader = LoadShaderFromMemory(WorldLighting.VertexShader, WorldLighting.FragmentPrelude + GraphicsShaders.WaterFragment);
         if (!IsShaderValid(WaterShader) || WaterShader.Id == Rlgl.GetShaderIdDefault()) throw new InvalidOperationException("Cannot load water effects shader.");
+        WallShader = LoadShaderFromMemory(WorldLighting.VertexShader, WorldLighting.FragmentPrelude + WallMaterial.FragmentShader);
+        if (!IsShaderValid(WallShader) || WallShader.Id == Rlgl.GetShaderIdDefault()) throw new InvalidOperationException("Cannot load wall shader.");
         UiText.Load();
         // Keep existing map material IDs while loading their editable PNG files first.
         var defaultTerrain = new Dictionary<string, string>
@@ -85,8 +92,10 @@ sealed class WorldAssets : IDisposable
         UiText.Unload();
         terrainBlending?.Dispose();
         terrainMeshes?.Dispose();
+        wallMeshes?.Dispose();
         UnloadShader(ShadowShader);
         UnloadShader(WaterShader);
+        UnloadShader(WallShader);
         UnloadShader(SpriteShader);
         foreach (var sprite in Sprites.Values) UnloadTexture(sprite.Texture);
         foreach (var texture in Terrain.Values) UnloadTexture(texture);
@@ -105,10 +114,14 @@ sealed partial class WorldRenderer(WorldAssets assets)
         Camera3D? terrainTextureView = null, WorldVisualFrame? visuals = null)
     {
         float hour = timeOfDay ?? map.Environment.TimeOfDay;
+        assets.SynchronizeWallMeshes(map, this);
         var bounds = TerrainVisibility.GetBounds(map, camera, viewWidth > 0 ? viewWidth : GetScreenWidth(), viewHeight > 0 ? viewHeight : GetScreenHeight(), maximumDistance);
         DrawTerrain(map, bounds, camera, hour, terrainTextureView ?? camera, visuals);
         Vector3 player = playerPosition ?? map.GroundPosition(map.Player.X, map.Player.Z);
         DrawShadows(map, camera, player, hour, bounds);
+        wallFrustum.Configure(camera, viewWidth > 0 ? viewWidth : GetScreenWidth(), viewHeight > 0 ? viewHeight : GetScreenHeight());
+        UpdateWallOpacity(map, camera, playerPosition);
+        DrawWalls(map, camera, hour, visuals, false);
         if (grid)
         {
             // Half-unit segments also follow the terrain's diagonal triangle edges on slopes.
@@ -144,6 +157,7 @@ sealed partial class WorldRenderer(WorldAssets assets)
         if (obstacleOpacity.Count > map.Objects.Count + map.Chests.Count + map.Npcs.Count + map.Monsters.Count + 32)
         { var ids = map.SceneEntities.Select(o => o.Id).ToHashSet(); foreach (var id in obstacleOpacity.Keys.Where(id => !ids.Contains(id)).ToArray()) obstacleOpacity.Remove(id); }
         DrawWater(map, camera, bounds, visuals?.Time ?? (float)GetTime(), hour, visuals);
+        DrawWalls(map, camera, hour, visuals, true);
     }
     public void DrawSprite(Camera3D camera, string id, Vector3 position, float height, Color fallback, byte alpha = 255)
     {
@@ -229,7 +243,8 @@ sealed partial class WorldRenderer(WorldAssets assets)
     {
         if (!map.Contains(p.X, p.Z) || map.WaterDepthAt(p.X, p.Z) > .55f || TerrainGeometry.NormalAt(map, p.X, p.Z).Y < .64f) return false;
         if (from is { } previous && Math.Abs(map.HeightAt(p.X, p.Z) - previous.Y) > .3f + Vector2.Distance(new(p.X, p.Z), new(previous.X, previous.Z)) * 1.2f) return false;
-        return !map.SceneEntities.Any(o => o.Id != ignoreId && CollisionGeometry.Blocks(o,
-            from is { } start ? new(start.X, start.Z) : new(p.X, p.Z), new(p.X, p.Z), radius));
+        Vector2 origin = from is { } start ? new(start.X, start.Z) : new(p.X, p.Z), destination = new(p.X, p.Z);
+        return !GridWallGeometry.Blocks(map, origin, destination, radius) && !map.Walls.Any(w => w.Blocks(origin, destination, radius)) &&
+            !map.SceneEntities.Any(o => o.Id != ignoreId && CollisionGeometry.Blocks(o, origin, destination, radius));
     }
 }

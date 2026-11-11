@@ -11,9 +11,10 @@ sealed partial class EditorApp
         Math.Abs(marqueeEnd.X - marqueeStart.Value.X), Math.Abs(marqueeEnd.Y - marqueeStart.Value.Y));
     void EndEditorGesture()
     {
+        EndGridWallStroke();
         document.EndSculptStroke(); gesture = dragging = dragArmed = false;
         marqueeStart = null; EndCameraLook();
-        fragmentDragStart = null; roadDraggedPoint = -1;
+        fragmentDragStart = null; roadDraggedPoint = wallDraggedPoint = -1;
     }
     void BeginMarquee()
     {

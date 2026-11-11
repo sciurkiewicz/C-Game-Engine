@@ -2,7 +2,7 @@ using System.Numerics;
 using Raylib_cs;
 using static Raylib_cs.Raylib;
 
-enum VisualSurface { Terrain, Sprite, Water }
+enum VisualSurface { Terrain, Sprite, Water, Wall }
 
 sealed record WorldVisualFrame(GraphicsSettings Settings, float Time, Camera3D Camera, float Hour, bool Outdoors)
 {
@@ -25,7 +25,7 @@ sealed record WorldVisualFrame(GraphicsSettings Settings, float Time, Camera3D C
         SetShaderValue(shader, GetShaderLocation(shader, "viewForward"), Vector3.Normalize(camera.Target - camera.Position), ShaderUniformDataType.Vec3);
         SetShaderValue(shader, GetShaderLocation(shader, "fogColor"), WorldLighting.Ambient(map, frame?.Hour ?? map.Environment.TimeOfDay) * new Vector3(.57f, .65f, .69f), ShaderUniformDataType.Vec3);
         SetShaderValue(shader, GetShaderLocation(shader, "visualTime"), frame?.Time ?? 0, ShaderUniformDataType.Float);
-        if (surface == VisualSurface.Terrain) SetShaderValue(shader, GetShaderLocation(shader, "wetness"), frame?.Wetness ?? 0, ShaderUniformDataType.Float);
+        if (surface is VisualSurface.Terrain or VisualSurface.Wall) SetShaderValue(shader, GetShaderLocation(shader, "wetness"), frame?.Wetness ?? 0, ShaderUniformDataType.Float);
         if (surface == VisualSurface.Water) SetShaderValue(shader, GetShaderLocation(shader, "rainIntensity"), frame?.Rain ?? 0, ShaderUniformDataType.Float);
         if (surface == VisualSurface.Sprite)
         {

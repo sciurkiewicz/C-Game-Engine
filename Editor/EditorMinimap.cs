@@ -59,6 +59,16 @@ sealed class EditorOverview : IDisposable
             for (int z = 0; z < height; z++)
             for (int x = 0; x < width; x++)
                 pixels[z * width + x] = TerrainOverview.Sample(map, (x + .5f) / width, (z + .5f) / height, Material);
+            // Bake the grid into the cached overview instead of issuing one draw per cell every frame.
+            // A minimum of one pixel preserves narrow corridors on large maps.
+            foreach (var cell in map.WallCells)
+            {
+                int px = cell.X * width / map.Width, pz = cell.Z * height / map.Depth;
+                int pw = Math.Max(1, (cell.X + 1) * width / map.Width - px), ph = Math.Max(1, (cell.Z + 1) * height / map.Depth - pz);
+                var color = cell.Style == WallStyle.Cave ? new Color(112, 121, 125, 255) : new Color(177, 151, 121, 255);
+                for (int z = pz; z < Math.Min(height, pz + ph); z++)
+                    pixels.Slice(z * width + px, Math.Min(pw, width - px)).Fill(color);
+            }
             if (texture.Id != 0) UnloadTexture(texture);
             texture = LoadTextureFromImage(image); SetTextureFilter(texture, TextureFilter.Bilinear);
         }
@@ -116,6 +126,16 @@ sealed partial class EditorApp
             for (int i = 1; i < curve.Length; i++)
                 DrawLineEx(TerrainOverview.Project(map, new(curve[i - 1].X, 0, curve[i - 1].Y), area),
                     TerrainOverview.Project(map, new(curve[i].X, 0, curve[i].Y), area), Math.Max(1, road.Width / map.Width * area.Width), color);
+        }
+        foreach (var wall in map.Walls)
+        {
+            var color = wall.Id == editingWallId && tool == EditTool.Walls ? Accent : new Color(185, 172, 157, 255);
+            for (int i = 0; i < wall.Points.Count - (wall.Closed ? 0 : 1); i++)
+            {
+                var a = wall.Points[i]; var b = wall.Points[(i + 1) % wall.Points.Count];
+                DrawLineEx(TerrainOverview.Project(map, new(a.X, 0, a.Z), area), TerrainOverview.Project(map, new(b.X, 0, b.Z), area),
+                    Math.Max(1.5f, wall.Thickness / map.Width * area.Width), color);
+            }
         }
         foreach (var entity in map.SceneEntities)
         {
