@@ -40,7 +40,8 @@ sealed class ColliderData
 
 static class CollisionGeometry
 {
-    public static bool Solid(SceneObject item) => item.Solid && !(item.IsDoor && item.DoorOpen);
+    public static bool Solid(SceneObject item) => item.Solid && !(item.IsDoor && item.DoorOpen) &&
+        !(item.GetType() == typeof(SceneObject) && WorldEffectCatalog.IsEffect(item.Asset));
     public static float Radius(SceneObject item) => item.Collider is { Kind: ColliderKind.Circle } c ? c.Radius :
         item.Collider is { } shape ? shape.Kind == ColliderKind.Box ? MathF.Sqrt(shape.Width * shape.Width + shape.Depth * shape.Depth) / 2 :
             shape.Points.Select(p => p.Vector.Length()).DefaultIfEmpty(.5f).Max() : Math.Clamp(item.Height * .13f, .2f, .8f);

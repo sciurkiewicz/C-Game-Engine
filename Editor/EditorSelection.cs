@@ -11,6 +11,8 @@ sealed partial class EditorApp
         Math.Abs(marqueeEnd.X - marqueeStart.Value.X), Math.Abs(marqueeEnd.Y - marqueeStart.Value.Y));
     void EndEditorGesture()
     {
+        EndWaterFlowStroke();
+        EndRiverStroke();
         EndGridWallStroke();
         document.EndSculptStroke(); gesture = dragging = dragArmed = false;
         marqueeStart = null; EndCameraLook();

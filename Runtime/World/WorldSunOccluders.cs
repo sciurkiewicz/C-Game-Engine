@@ -13,6 +13,7 @@ sealed partial class WorldRenderer
         BeginShaderMode(assets.SpriteShader);
         foreach(var item in map.SceneEntities)
         {
+            if (item.GetType() == typeof(SceneObject) && WorldEffectCatalog.IsEffect(item.Asset)) continue;
             var position=map.GroundPosition(item);
             if(Vector3.DistanceSquared(position,camera.Target)>MathF.Pow(180+item.Height,2) || Vector3.Dot(position-camera.Position,forward)<-item.Height)continue;
             DrawSpriteGeometry(camera,item.Asset,position,item.Height,Color.Black,255,frame.Wind>0&&WorldVisualFrame.Vegetation(item),true);

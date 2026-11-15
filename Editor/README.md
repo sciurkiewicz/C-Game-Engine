@@ -16,7 +16,7 @@ dotnet run --project Editor
 | Player / 4 | Kliknij mapę, aby ustawić punkt startowy. Możesz wybrać grafikę postaci i jej wysokość. |
 | NPC / 5 | Wybierz PNG postaci lub złoty znacznik i kliknij mapę, aby dodać NPC. Ostatnio dodany NPC pozostaje zaznaczony; przycisk po prawej otwiera jego dialog. |
 | Sculpt / 6 | Rzeźbienie pędzlem, stemple terenu oraz erozja wodna i osypywanie zboczy. |
-| Water / 7 | Kliknij zagłębienie, aby wypełnić je wodą do ustawionego poziomu, lub opróżnij zbiornik. |
+| Water / 7 | Wypełnij lub opróżnij zbiornik, wykop rzekę pędzlem i namaluj kierunek jej nurtu. |
 | Chest / 8 | Kliknij mapę, aby wstawić skrzynię. Zaznacz ją i wybierz Items, aby przypisać zawartość. |
 | Monster / 9 | Wybierz PNG postaci lub czerwony znacznik i kliknij mapę. Zaznacz potwora i wybierz Stats, aby ustawić walkę. |
 | Ściany / 0 | Siatka maluje pełne bloki ścian lochu; Punkty zachowują rysowanie ścian przez węzły. |
@@ -34,6 +34,22 @@ Pole **Search graphics / Search materials** filtruje bibliotekę po nazwie i śc
 W **Place → Object brush: ON → Brush settings** ustaw promień, liczbę obiektów na odcisk, minimalny odstęp i losową zmianę rozmiaru. Przytrzymaj LMB i przesuwaj mysz, aby malować obiektami. **Ctrl+klik grafik w bibliotece** miesza kilka wybranych PNG. Pędzel pomija głęboką wodę i strome zbocza, zachowuje odstępy od istniejących aktorów i nie dokłada obiektów co klatkę przy nieruchomej myszy. Całe pociągnięcie cofa się jednym Ctrl+Z. Pędzel działa dla zwykłych obiektów; prefabrykaty i skrzynie zachowują osobne narzędzia.
 
 Nowe obiekty i skrzynie zachowują wspólną skalę **128 pikseli = 1 jednostka świata**: grafika 256 × 256 jest dwa razy szersza i wyższa niż 128 × 128. Przycinanie przezroczystych marginesów usuwa tylko puste miejsce, a zmniejszanie dużych tekstur na GPU nie zmienia skali. Wysokość można nadal zmienić ręcznie; zapisane mapy zachowują ustawione rozmiary.
+
+## Efekty do wstawiania na mapę
+
+W bibliotece wybierz kategorię **effects**, kliknij kartę efektu i następnie miejsce na mapie. Kolejne kliknięcia dodają niezależne emitery. Dostępne są **Dym**, **Para**, **Gorące powietrze**, **Iskry** i **Świetliki**. Animacja jest widoczna od razu podczas edycji, a także w **Play / F5** i Runtime.
+
+**Select / 1** zaznacza i przesuwa efekt tak jak zwykły obiekt. Pole **Rozmiar efektu** we właściwościach zmienia wielkość emitera. Efekty domyślnie nie mają kolizji. Obsługują zapis mapy, Ctrl+Z / Ctrl+Y, Ctrl+D, usuwanie i kopiowanie fragmentów mapy.
+
+**Gorące powietrze** zniekształca obraz za emiterem, dając falowanie nad rozgrzanym miejscem. Przeszkody przed emiterem zasłaniają zniekształcenie; marker w widoku edycji ułatwia jego znalezienie. Pozostałe efekty pokazują unoszące się cząsteczki. Ręcznie wstawione emitery działają niezależnie od globalnego `Enabled` w [effects.json](../Runtime/Graphics/effects.json). `HeatDistortion` nadal steruje automatycznym falowaniem nad ogniskami i pochodniami.
+
+Efekty i ich miniatury są generowane programowo: nie trzeba dodawać plików PNG. Mapa przechowuje je jako obiekty z identyfikatorami `objects/effects/smoke.png`, `steam.png`, `heat_haze.png`, `embers.png` i `fireflies.png` w tym samym katalogu wirtualnych zasobów.
+
+Test biblioteki, wstawiania, edycji, zapisu i Play:
+
+```sh
+dotnet run --project Editor -- --effects-interaction-test
+```
 
 ## Ściany
 
@@ -87,7 +103,7 @@ Przycisk **View** u góry po prawej oraz **V** przełączają **Perspective → 
 
 **Free camera** jest osobnym trybem roboczym edytora i można ją włączyć bezpośrednio przez **hamburger → Free camera**. Nie zmienia ustawień Play ani Runtime. **RMB + mysz** rozgląda się, **WASD** lata względem kierunku kamery, **Q/E** obniża/podnosi kamerę, **Shift** przyspiesza. **RMB + kółko** zmienia prędkość, samo kółko przesuwa kamerę, środkowy przycisk przesuwa kadr, a **Alt+LMB** obraca kamerę wokół zaznaczenia lub ostatniego punktu skupienia. **F** wraca do zaznaczonego obiektu albo startu gracza. Po zatrzymaniu Play edytor zachowuje wolną kamerę.
 
-Podgląd **Play / F5** pokazuje również efekty graficzne gry: mgłę, wiatr roślin, bloom, migotanie światła ognia, głębię ostrości podążającą za bohaterem, korekcję kolorów, winietę, promienie słońca, kontury, gorące powietrze, deszcz z mokrym terenem i reakcję na obrażenia. Ustawienia znajdują się w [effects.json](../Runtime/Graphics/effects.json); po ich zmianie zatrzymaj i ponownie uruchom Play. W widoku roboczym mapy efekty są wyłączone, a siatka i narzędzia pozostają dostępne. [Instrukcja grafiki](../Runtime/Graphics/README.md) opisuje wszystkie parametry.
+Podgląd **Play / F5** pokazuje również efekty graficzne gry: mgłę, wiatr roślin, bloom, migotanie światła ognia, głębię ostrości podążającą za bohaterem, korekcję kolorów, winietę, promienie słońca, kontury, gorące powietrze, deszcz z mokrym terenem i reakcję na obrażenia. Ustawienia znajdują się w [effects.json](../Runtime/Graphics/effects.json); po ich zmianie zatrzymaj i ponownie uruchom Play. W widoku roboczym mapy globalne efekty obrazu są wyłączone, a siatka i narzędzia pozostają dostępne. Emitery wstawione z kategorii **effects** są animowane także podczas edycji. [Instrukcja grafiki](../Runtime/Graphics/README.md) opisuje wszystkie parametry.
 
 **Minimap / M**, przycisk we właściwościach i pozycja w hamburgerze włączają podgląd całej bieżącej mapy w prawym górnym rogu widoku roboczego. Minimapę widać podczas edycji; pokazuje materiały i ukształtowanie terenu, wodę, obiekty, aktorów, triggery, zaznaczenie, punkt startowy oraz obszar widziany przez kamerę. Kliknięcie przestawia kamerę bez użycia aktywnego narzędzia. Zachowuje proporcje prostokątnych map i używa ograniczonej liczby próbek również dla 2048 × 2048.
 
@@ -225,7 +241,15 @@ Triggery odnoszące się do kopiowanych NPC i drzwi wskazują nowe kopie. Lokaln
 
 **Sculpt → Terrain erosion** naturalizuje istniejące wzniesienia, np. po użyciu stempli. **Hydraulic erosion** symuluje krople spływające po zboczu, które żłobią kanały, przenoszą ziemię i odkładają ją niżej. **Talus / loose debris** osypuje strome fragmenty i tworzy łagodniejsze podnóża. Ustaw promień 1–64 m, siłę oraz liczbę kropli lub przebiegów osypywania, po czym kliknij obszar. Każde kliknięcie jest osobną operacją; przytrzymanie LMB jej nie powtarza. Obszar poza pędzlem pozostaje bez zmian, wysokości zachowują krok 0,25 m i zapisują się w mapie. Ctrl+Z przywraca teren sprzed całej symulacji, Ctrl+Y dokładnie odtwarza jej wynik.
 
-**Water / 7** wypełnia zbiorniki. Najpierw wykop zagłębienie narzędziem Sculpt, ustaw **Water level**, wybierz **Fill basin** i kliknij poniżej tego poziomu. Woda rozlewa się po połączonych częściach zagłębienia, zatrzymuje na suchych grzbietach i kończy dokładnie na przecięciu z terenem. Wypełnianie zachowuje wysokości i materiały dna. Powierzchnia ma animowane fale i przezroczystość. **Drain basin** opróżnia kliknięty zbiornik. **Water level** jest wspólny dla mapy i zmienia się co 0,25 m; podnoszenie poziomu rozszerza istniejące zbiorniki. Woda może sięgać krawędzi mapy, także podczas wypełniania i podnoszenia poziomu. Przycisk **Waves** przełącza fale.
+**Water / 7** tworzy zbiorniki i rzeki. Aby wypełnić istniejące zagłębienie, wykop je narzędziem Sculpt, ustaw **Water level**, wybierz **Fill basin** i kliknij poniżej tego poziomu. Woda rozlewa się po połączonych częściach zagłębienia, zatrzymuje na suchych grzbietach i kończy dokładnie na przecięciu z terenem. Wypełnianie zachowuje wysokości i materiały dna. Powierzchnia ma animowane fale, odbicia otoczenia oraz przejrzystość zależną od głębokości. **Drain basin** opróżnia kliknięty zbiornik. **Water level** jest wspólny dla mapy i zmienia się co 0,25 m; podnoszenie poziomu rozszerza istniejące zbiorniki. Woda może sięgać krawędzi mapy, także podczas wypełniania i podnoszenia poziomu. Przycisk **Waves** przełącza fale.
+
+**Water → Pędzel rzeki** pozwala określić bieg rzeki bez wcześniejszego kopania. Ustaw po prawej **Szerokość (m)** od **2 do 32 m** oraz **Głębokość (m)** od **0,25 do 8 m**, po czym przytrzymaj LMB i przeciągnij po mapie. Pędzel wykopie ciągłe koryto z łagodnymi brzegami i od razu doda wodę wzdłuż trasy, także przy szybkim ruchu myszy. Głębokość jest liczona od wspólnego **Poziomu wody**; wszystkie rzeki i zbiorniki na mapie mają tę samą wysokość tafli. Ponowne prowadzenie po tej samej trasie nie pogłębia koryta, a istniejące głębsze dno pozostaje zachowane. Całe pociągnięcie wraz z wodą cofa jeden **Ctrl+Z**; **Ctrl+Y** je odtwarza. Koryto i woda zapisują się przez **Ctrl+S** w dotychczasowym formacie mapy.
+
+**Water → Kierunek nurtu** to osobny pędzel animacji istniejącej wody. Ustaw **Szerokość pędzla (m)** od **2 do 32 m** i **Prędkość nurtu (m/s)** od **0,2 do 4 m/s**, a następnie przeciągnij LMB zgodnie z kierunkiem przepływu. Fale i refleksy podążają za namalowaną trasą, także na zakrętach. Przeciągnięcie w przeciwną stronę odwraca lokalny nurt. Strzałki widoczne przy aktywnym trybie pokazują kierunki na powierzchni. Przełącz przycisk **Maluj kierunek** na **Usuń nurt: ON**, aby wymazać namalowany prąd i przywrócić zwykłą animację wody. Pędzel zachowuje koryto i zasięg zbiornika. Jedno **Ctrl+Z** cofa całe pociągnięcie, **Ctrl+Y** je odtwarza, a **Ctrl+S** zapisuje nurt z mapą. Działa on także w Play i Runtime; starsze mapy zachowują dotychczasową animację.
+
+**Water → Wygląd wody...** otwiera ustawienia materiału. Wybierz paletę **Jezioro**, **Rzeka**, **Tropikalna** lub **Bagno**, albo ustaw własne RGB osobno dla płycizny i głębi. Przyciski RGB zmieniają wartość co 8; przytrzymanie **Shift** daje krok 1. **Przejrzystość (m)** określa, jak głęboko widać dno: większa wartość oznacza przejrzystszą wodę. Pozostałe pola ustawiają **Siłę odbić**, **Załamanie obrazu**, **Pianę przy brzegu** i **Wysokość fal (m)**.
+
+Płytka woda odsłania więcej materiału dna, a głębsza stopniowo przyjmuje wybrany kolor głębi. Odbicia obiektów i terenu nad wodą oraz falujące załamanie obrazu dna działają w edytorze, Play i Runtime. Zmiany materiału są widoczne od razu, obsługują **Ctrl+Z / Ctrl+Y** i zapisują się z mapą przez **Zapisz mapę / Ctrl+S**. **Escape** zamyka ustawienia. Starsze mapy bez ustawień wyglądu otrzymują materiał domyślny.
 
 Całe pociągnięcie pędzla, wypełnienie lub opróżnienie zbiornika jest jednym krokiem cofania. W podglądzie i Runtime postać oraz kamera podążają za wysokością podłoża. Głęboka woda (ponad 0,55 m) i strome zbocza zatrzymują ruch; płytką wodę można przejść. Starsze mapy bez wysokości wczytują się jako płaskie; zapisane pola water pozostają obsługiwane.
 
@@ -283,9 +307,14 @@ Po śmierci gracza **Enter** przywraca początkową mapę, przeciwników, HP ora
 
 ```sh
 dotnet run --project Editor -- --editor-test
+dotnet run --project Editor -- --river-test
+dotnet run --project Editor -- --water-flow-test
 dotnet run --project Editor -- --smoke-test
 dotnet run --project Editor -- --interaction-test
 dotnet run --project Editor -- --inventory-interaction-test
+dotnet run --project Editor -- --water-interaction-test
+dotnet run --project Editor -- --river-interaction-test
+dotnet run --project Editor -- --water-flow-interaction-test
 dotnet run --project Editor -- --dialogue-link-interaction-test
 dotnet run --project Editor -- --dialogue-sequence-interaction-test
 dotnet run --project Editor -- --monster-interaction-test
@@ -299,7 +328,13 @@ dotnet run --project Editor -- --fragment-test
 dotnet run --project Editor -- --fragment-interaction-test
 ```
 
-Pierwszy test sprawdza dane i operacje edycji bez okna, w tym przedmioty, skrzynie, teren, wodę i mapy 2048 × 2048. Pozostałe wymagają sesji graficznej. Pełny test interakcji zapisuje `Editor/editor-smoke.png` i obejmuje także itemki. Wariant `--inventory-interaction-test` sprawdza tylko skrzynie, przypisywanie, przeciąganie, zajęte pola, cofanie, zapis, otwieranie E/I, Shift+klik, zatrzymanie ruchu i niezależność podglądu. Mapy oraz zrzuty okien testowych są w `Editor/obj/`.
+`--editor-test` sprawdza dane i operacje edycji bez okna, w tym przedmioty, skrzynie, teren, wodę i mapy 2048 × 2048. Warianty `--smoke-test` oraz testy interakcji wymagają sesji graficznej. Pełny test interakcji zapisuje `Editor/editor-smoke.png` i obejmuje także itemki. Wariant `--inventory-interaction-test` sprawdza tylko skrzynie, przypisywanie, przeciąganie, zajęte pola, cofanie, zapis, otwieranie E/I, Shift+klik, zatrzymanie ruchu i niezależność podglądu. Mapy oraz zrzuty okien testowych są w `Editor/obj/`.
+
+`--water-interaction-test` sprawdza otwieranie ustawień wody, palety, RGB, przejrzystość i odbicia, cofanie/ponawianie, blokowanie skrótów pod oknem, zapis/wczytanie oraz minimalny rozmiar okna. Zapisuje `Editor/obj/water-settings.png`.
+
+`--river-test` sprawdza bez okna ciągłość koryta, szerokość i głębokość, ponowne malowanie bez pogłębiania, lokalny zasięg wody, zapis/wczytanie, cofanie/ponawianie, krawędzie mapy oraz mapę 2048 × 2048. `--river-interaction-test` sprawdza wybór pędzla i jego ustawień, rysowanie zakrętów, jedno cofnięcie całego pociągnięcia, blokowanie malowania pod oknem i podczas przesuwania kamery, minimapę, zapis/wczytanie oraz niezależność Play. Zapisuje `Editor/obj/river-brush-editor.png` i `Editor/obj/river-brush-play.png`.
+
+`--water-flow-test` działa bez okna i sprawdza lokalne kierunki i zakręty, prędkość, interpolację, miękkie krawędzie, wymazywanie, ograniczenie do istniejącej wody, walidację, cofanie, zapis, starsze mapy oraz niezależne kopie. `--water-flow-interaction-test` sprawdza wybór trybu, szerokość i prędkość, rysowanie oraz odwracanie nurtu, gumkę, jedno cofnięcie całego pociągnięcia, ochronę suchego terenu, obsługę okien i minimapy, zapis/wczytanie, Play oraz minimalny rozmiar okna. Zapisuje `Editor/obj/water-flow-editor.png`, `water-flow-play.png` i `water-flow-minimum.png`.
 
 `--dialogue-link-interaction-test` sprawdza tworzenie i zmianę przekierowania, cykliczny układ drzewka, anulowanie, usuwanie, cofanie, zapis/wczytanie oraz wielokrotne powroty w podglądzie gry. Pełny test interakcji również obejmuje te sprawdzenia.
 

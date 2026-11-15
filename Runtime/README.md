@@ -12,7 +12,13 @@ Mapa zapisuje pole `Type`: `OpenWorld`, `Building` lub `Cave`. Budynki i jaskini
 
 Obiekty i postać dopasowują się do poziomego kierunku kamery, a ich nachylenie wynosi połowę kąta patrzenia w dół (maksymalnie 30°). Podstawa pozostaje zakotwiczona na wysokości terenu. To nasze ustawienie częściowego billboardingu inspirowane opisem twórcy Don't Starve, a nie odtworzenie nieudokumentowanych parametrów jego silnika. Podłoże jest siatką trójkątów o wysokościach edytowanych pędzlem Sculpt. Renderer, zaznaczanie i obrys w edytorze używają tej samej geometrii.
 
-Woda jest osobną powierzchnią 3D z animowanymi falami, przezroczystością i cieniowaniem. Wypełnia połączone zagłębienie do wybranego poziomu, a brzeg wyznacza przecięcie z terenem. Dno zachowuje wysokości i materiał. Wysokości wierzchołków terenu są zaokrąglane do 0,25 m. Postać porusza się na wysokości podłoża, a kamera podąża również pionowo. Głębokość ponad 0,55 m oraz strome zbocza blokują ruch.
+Woda jest osobną powierzchnią 3D z animowanymi falami, odbiciami otoczenia i przejrzystością zależną od głębokości. Płycizny odsłaniają materiał dna, a głębsze miejsca stopniowo przechodzą w kolor głębi. Falujące załamanie obrazu pokazuje dno pod powierzchnią, a odbicia obejmują geometrię obiektów i terenu nad wodą. Brzeg ma nieregularne, miękkie przejście, delikatny mokry pas terenu i przerywaną pianę; szerokość przejścia uwzględnia nachylenie dna. Refleksy słabną przy samym styku z lądem. Wypełnianie zbiornika dodaje wodę w połączonym zagłębieniu do wybranego poziomu, a brzeg wyznacza przecięcie z terenem. Ta operacja zachowuje wysokości i materiał dna. Wysokości wierzchołków terenu są zaokrąglane do 0,25 m. Postać porusza się na wysokości podłoża, a kamera podąża również pionowo. Głębokość ponad 0,55 m oraz strome zbocza blokują ruch.
+
+Rzekę można narysować w edytorze przez **Water → Pędzel rzeki**. Pędzel jednocześnie wykopuje koryto i dodaje wodę wzdłuż trasy; ponowne malowanie nie pogłębia dna. Rzeki i zbiorniki korzystają ze wspólnego poziomu tafli. Wykopany teren i woda zapisują się w dotychczasowym formacie mapy i są od razu dostępne w Play oraz Runtime.
+
+Osobny tryb **Water → Kierunek nurtu** maluje ruch istniejącej wody przez przeciąganie LMB. Kierunek ruchu pędzla określa przepływ, szerokość wynosi **2–32 m**, a prędkość **0,2–4 m/s**. Fale powierzchni i refleksy podążają za lokalnymi kierunkami oraz zakrętami, płynnie przechodząc między komórkami. Strzałki w edytorze pomagają ocenić trasę; **Usuń nurt** przywraca zwykłą animację w wybranym miejscu. Całe pociągnięcie cofa jeden Ctrl+Z. Nurt zachowuje geometrię i obszar wody, zapisuje się z mapą i działa w Play oraz Runtime. Starsze mapy bez nurtu zachowują dotychczasową animację.
+
+Wygląd ustawia się w edytorze przez **Water → Wygląd wody...**. Dostępne są palety **Jezioro**, **Rzeka**, **Tropikalna**, **Bagno**, własne RGB płycizny i głębi oraz przejrzystość, siła odbić, załamanie obrazu, piana i wysokość fal. Większa **Przejrzystość (m)** odsłania więcej dna. Materiał działa w edytorze, Play i Runtime, zapisuje się z mapą i obsługuje cofanie. Mapy bez `WaterAppearance` otrzymują materiał domyślny. Odbicia i obraz dna zachowują pełną rozdzielczość widoku. Fale i piana korzystają z nieregularnych pól w przestrzeni świata: kilka skal, obrotów i niezależnych prędkości przełamuje powtarzalne pasy. Drobne fale tworzą ostre refleksy światła, a delikatna refrakcja zachowuje szczegóły dna. Udział odbicia zależy także od kąta patrzenia.
 
 Przezroczyste piksele grafik obiektów i postaci nie zapisują głębokości. Woda pozostaje widoczna przez puste fragmenty PNG, a widoczne części obiektu zachowują prawidłowe zasłanianie i zanurzenie.
 
@@ -116,6 +122,8 @@ Podłoże korzysta z buforowanych siatek GPU po 16 × 16 kafelków. Malowanie zm
 
 `World/` zawiera wspólny format mapy JSON, katalog grafik, renderer, ruch gracza, teren, wodę i system dialogów. Editor kompiluje te same pliki źródłowe. NPC są w tablicy `Npcs`; każdy ma własne drzewko z identyfikatorami węzłów i uporządkowanymi połączeniami `Next`. Odpowiedź bohatera ma najwyżej jeden cel NPC; może wskazywać istniejącą kwestię, także wcześniejszą. Kwestia NPC prowadzi do jednej kwestii NPC albo do listy odpowiedzi bohatera. Sekwencje NPC, pętle i wspólne cele korzystają z tego samego formatu JSON. Starsze mapy bez `Npcs` wczytują się z pustą listą NPC. Mapy zachowują niezależne wymiary `Width` i `Depth`. `Heights` przechowuje wysokości `(Width + 1) × (Depth + 1)` wierzchołków lub pustą tablicę dla płaskiej mapy; `WaterLevel` i `WaveHeight` określają poziom i amplitudę wody. `WaterCells` to maski dwóch trójkątów każdego kafelka, zapisane jako Base64; materiały dna pozostają w `Tiles`. Starsze mapy z polami water w `Tiles` pozostają obsługiwane. Materiały są w `Editor/objects/`, `Editor/characters/` i `Editor/terrain/` — uruchamiaj aplikacje z zachowaniem struktury repozytorium.
 
+`WaterFlow` przechowuje tylko komórki z namalowanym nurtem: klucz to indeks `z * Width + x`, a wartość zawiera składowe `X` i `Z` prędkości w metrach na sekundę. Wektory są przypisane do środków komórek i próbkowane z interpolacją biliniową. Brak pola w starszej mapie oznacza pusty zbiór. Zapis, historia cofania i kopia Play zachowują te dane niezależnie.
+
 Brakująca grafika obiektu jest zastępowana różowym prostokątem, a brakująca tekstura podłoża trawą. Odwołania zapisane w mapie pozostają zachowane.
 
 `Player.Inventory` i `Chests[].Contents` przechowują wymiary siatki oraz tablicę `Items` z identyfikatorem egzemplarza, `DefinitionId` i pozycją X/Y. `Chests` zawiera także nazwę i właściwości obiektu. Brak tych pól w starszej mapie oznacza puste EQ i brak skrzyń. Format odrzuca nieznane przedmioty, powtórzone identyfikatory, nakładające się itemki i itemki wystające poza siatkę.
@@ -137,6 +145,10 @@ dotnet run --project Runtime -- --map-test
 dotnet run --project Runtime -- --terrain-test
 dotnet run --project Runtime -- --terrain-blend-test
 dotnet run --project Runtime -- --sprite-water-test
+dotnet run --project Runtime -- --water-test
+dotnet run --project Runtime -- --water-flow-test
+dotnet run --project Runtime -- --water-gpu-test
+dotnet run --project Runtime -- --water-flow-gpu-test
 dotnet run --project Runtime -- --menu-interaction-test
 dotnet run --project Runtime -- --narrative-test
 dotnet run --project Runtime -- --narrative-interaction-test
@@ -148,6 +160,10 @@ dotnet run --project Runtime -- --smoke-test
 Testy kamery, dialogów, map i terenu działają bez okna. Test dialogów sprawdza rozgałęzienia, zakończenia, zasięg rozmowy, kolizje NPC, walidację drzewa, polskie teksty i zgodność starszych map. Test map sprawdza tworzenie, malowanie, cofanie, zapis/wczytanie i podgląd mapy 2048 × 2048 oraz ograniczenie renderowania podłoża do widocznego obszaru. Test terenu sprawdza pędzle, trafianie promieniem w siatkę, zbocza, wysokość postaci, geometrię wody, fale i przycinanie brzegów. Podgląd wymaga sesji graficznej, kończy się po 15 klatkach i zapisuje `wildwood-smoke.png` w katalogu głównym repozytorium. Warianty kamery: `--smoke-test --close` i `--smoke-test --far`. `--dialogue-smoke-test --map ścieżka.json` pokazuje rozmowę pierwszego NPC z podanej mapy i kończy się w ten sam sposób.
 
 `--sprite-water-test` wymaga sesji graficznej i porównuje piksele renderowane przez GPU przy różnych przybliżeniach: wodę pod przezroczystym tłem i otworami grafiki, widoczną część obiektu oraz zanurzenie. Zapisuje podgląd drzewa nad wodą w `Editor/obj/sprite-water.png`. Ten sam test uruchamia się w teście interakcji edytora.
+
+`--water-test` sprawdza ustawienia materiału, walidację, zgodność starszych map, zapis i cofanie bez okna. `--water-gpu-test` sprawdza obraz wody renderowany przez GPU, w tym głębokość i przejrzystość, kolor, odbicia oraz załamanie obrazu; wymaga sesji graficznej.
+
+`--water-flow-test` sprawdza bez okna kierunki, zakręty, prędkość, interpolację i wymazywanie nurtu, ograniczenie edycji do istniejącej wody, cofanie, zapis, starsze mapy oraz niezależność kopii. `--water-flow-gpu-test` wymaga sesji graficznej i porównuje widoczny ruch fal zgodnie z kierunkiem, jego odwrócenie, lokalny zakręt, ciągłość odnawiania animacji oraz zachowanie odległej wody i suchego terenu. Zapisuje podglądy `Editor/obj/water-flow-*.png`.
 
 `--terrain-blend-test` porównuje piksele GPU na środkach, granicach i narożnikach materiałów, sprawdza własne tekstury, malowanie/cofanie, powtarzanie bez przenikania atlasu, kilka partii renderowania, zmianę widocznego obszaru mapy 2048 × 2048, starsze pola water oraz oba rzuty na zboczach. Asymetryczny wzór kontrolny sprawdza kierunek góry, dołu i boków PNG w kamerze 3/4, izometrycznej i pionowej oraz stałe położenie tekstur w świecie przy obracaniu, przesuwaniu i zoomie wolnej kamery, bez przebudowy siatek terenu. Wymaga sesji graficznej. Zapisuje `Editor/obj/terrain-blend-perspective.png` oraz `Editor/obj/terrain-blend-isometric.png`. Pełny test interakcji edytora również go uruchamia.
 

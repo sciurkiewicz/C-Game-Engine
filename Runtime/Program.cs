@@ -1,6 +1,17 @@
 ﻿using Raylib_cs;
 using static Raylib_cs.Raylib;
 
+if (args.Contains("--water-flow-test"))
+{
+    WaterFlowChecks.Run();
+    return;
+}
+if (args.Contains("--water-test"))
+{
+    WaterAppearanceChecks.Run();
+    return;
+}
+
 if (args.Contains("--grid-wall-test"))
 {
     GridWallChecks.Run();
@@ -87,6 +98,16 @@ SetTargetFPS(60);
 try
 {
     using var assets = new WorldAssets();
+    if(args.Contains("--water-flow-gpu-test"))
+    {
+        WaterFlowGpuChecks.Run(assets);
+        return;
+    }
+    if(args.Contains("--water-gpu-test"))
+    {
+        WaterAppearanceGpuChecks.Run(assets);
+        return;
+    }
     if (args.Contains("--wall-cache-gpu-test"))
     {
         new WorldRenderer(assets).RunWallCacheGpuChecks();

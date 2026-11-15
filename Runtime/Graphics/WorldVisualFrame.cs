@@ -6,6 +6,10 @@ enum VisualSurface { Terrain, Sprite, Water, Wall }
 
 sealed record WorldVisualFrame(GraphicsSettings Settings, float Time, Camera3D Camera, float Hour, bool Outdoors)
 {
+    public bool WaterCapture { get; init; }
+    public float ClipDirection { get; init; }
+    public float ClipHeight { get; init; }
+    public Camera3D? BillboardCamera { get; init; }
     public bool Enabled => Settings.Enabled;
     public float Rain => Enabled && Outdoors && Settings.Rain ? Settings.RainIntensity : 0;
     public float Wetness => Enabled && Outdoors && Settings.Rain ? Settings.Wetness : 0;
@@ -17,6 +21,7 @@ sealed record WorldVisualFrame(GraphicsSettings Settings, float Time, Camera3D C
     {
         var settings = frame?.Settings;
         bool enabled = frame?.Enabled == true;
+        SetShaderValue(shader, GetShaderLocation(shader, "worldClip"), new Vector2(frame?.ClipDirection ?? 0,frame?.ClipHeight ?? 0), ShaderUniformDataType.Vec2);
         var fog = enabled && frame!.Outdoors && settings!.Fog
             ? new Vector4(Vector3.Distance(camera.Position, camera.Target) + settings.FogStart,
                 Vector3.Distance(camera.Position, camera.Target) + settings.FogEnd, settings.FogStrength, settings.GroundFog) : Vector4.Zero;

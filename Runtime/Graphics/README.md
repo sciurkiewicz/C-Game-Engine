@@ -2,7 +2,19 @@
 
 [effects.json](effects.json) ustawia efekty świata w Runtime i podglądzie **Play / F5**. Wartości są odczytywane przy **Nowej grze** albo ponownym włączeniu Play. Można zmieniać je bez edytowania kodu i bez ponownego zapisywania map.
 
-Domyślnie wszystkich 12 efektów jest włączonych z delikatną intensywnością. `Enabled: false` wyłącza cały zestaw. Każdy efekt ma też własny przełącznik.
+Domyślnie wszystkich 12 globalnych efektów jest włączonych z delikatną intensywnością. `Enabled: false` wyłącza ten zestaw. Każdy efekt ma też własny przełącznik. Emitery umieszczone ręcznie na mapie mają osobne działanie opisane poniżej.
+
+## Emitery na mapie
+
+W edytorze wybierz kategorię biblioteki **effects**, następnie kartę i miejsce na mapie. Wbudowane efekty to **Dym**, **Para**, **Gorące powietrze**, **Iskry** oraz **Świetliki**. Są animowane podczas edycji, w Play i Runtime. Pole **Rozmiar efektu** zmienia skalę emitera; domyślnie efekt nie ma kolizji. Zaznaczanie, przesuwanie, duplikowanie, cofanie i zapis działają jak dla pozostałych obiektów.
+
+Gorące powietrze delikatnie załamuje obraz tła w obszarze emitera. Drobna, nieregularna turbulencja szybko przesuwa się ku górze, z niezależnym wzorem dla każdego emitera. Bufor głębokości zapobiega zniekształcaniu przeszkód, które znajdują się przed nim; marker w edytorze wskazuje położenie efektu. Dym i para tworzą unoszące się, miękkie obłoki, iskry lecą do góry, a świetliki krążą wokół emitera.
+
+Ręcznie wstawione emitery działają także przy `Enabled: false` i `HeatDistortion: false`. Te przełączniki dotyczą globalnego zestawu; `HeatDistortion` steruje automatycznym gorącym powietrzem nad ogniskami i pochodniami. Aby usunąć lokalny efekt, usuń jego obiekt z mapy.
+
+Miniatury i cząsteczki są generowane programowo bez dodatkowych plików PNG. W mapie pozostają zwykłe obiekty z wirtualnymi identyfikatorami `objects/effects/smoke.png`, `objects/effects/steam.png`, `objects/effects/heat_haze.png`, `objects/effects/embers.png` oraz `objects/effects/fireflies.png`. Dzięki temu obejmują je istniejące zapisy, prefabrykaty i fragmenty mapy.
+
+## Globalne ustawienia obrazu
 
 | Efekt | Przełącznik i parametry |
 | --- | --- |
@@ -54,11 +66,13 @@ Najważniejsze zakresy: intensywności deszczu, mokrości, konturów, promieni i
 
 ## Renderowanie
 
-Efekty są nakładane na obraz świata przed paskiem HP i oknami rozmów czy ekwipunku. Menu główne i karty fabularne mają osobny wygląd. Przejście z kart do gry nadal przechodzi przez pełną czerń. Podgląd mapy podczas edycji zachowuje surowy obraz i pomocniczą siatkę; podgląd Play pokazuje efekty gry bez siatki.
+Globalne efekty są nakładane na obraz świata przed paskiem HP i oknami rozmów czy ekwipunku. Menu główne i karty fabularne mają osobny wygląd. Przejście z kart do gry nadal przechodzi przez pełną czerń. Podgląd mapy podczas edycji zachowuje surowy obraz i pomocniczą siatkę, ale pokazuje animowane emitery z kategorii **effects**; podgląd Play pokazuje także globalne efekty gry bez siatki.
 
-Głębia ostrości korzysta z bufora głębokości sceny, a nie z położenia piksela względem góry i dołu ekranu. Płaszczyzna ostrości przechodzi przez środek postaci; gdy postać znajduje się poza widokiem, punktem odniesienia jest cel kamery. Woda i częściowo przezroczyste przeszkody nie zapisują własnej głębokości, więc ich rozmycie korzysta z powierzchni znajdujących się pod nimi. Przezroczyste piksele PNG pozostawiają głębokość tła.
+Głębia ostrości korzysta z bufora głębokości sceny, a nie z położenia piksela względem góry i dołu ekranu. Płaszczyzna ostrości przechodzi przez środek postaci; gdy postać znajduje się poza widokiem, punktem odniesienia jest cel kamery. Woda zapisuje głębokość swojej powierzchni, dzięki czemu odległe dno nie powoduje rozmycia bliższych fal i refleksów. Częściowo przezroczyste przeszkody korzystają z głębokości powierzchni pod nimi. Przezroczyste piksele PNG pozostawiają głębokość tła.
 
-Poświata używa dwóch kierunków rozmycia w połowie rozdzielczości, a promienie 32 próbek i osobnej maski w połowie rozdzielczości. Jedna klatka wykorzystuje najwyżej 16 źródeł poświaty oraz 16 źródeł gorącego powietrza. Bufory są ponownie używane, odtwarzane po zmianie rozmiaru okna i zwalniane przy zamknięciu aplikacji.
+Nurt malowany w edytorze przez **Water → Kierunek nurtu** przesuwa zarówno fale siatki wody, jak i drobne fale oraz refleksy shadera. Lokalne wektory prędkości są interpolowane biliniowo, dzięki czemu ruch zmienia kierunek na zakrętach bez szwów między komórkami. Dwie warstwy animacji przesunięte w fazie płynnie się przenikają i regularnie odnawiają swoje przesunięcie. Ogranicza to rozciąganie wzoru przy zmiennym kierunku nurtu i zachowuje ciągłość przy odnowieniu fazy. Obszary bez namalowanego prądu oraz starsze mapy zachowują dotychczasową animację. Ustawienia nurtu zapisują się w mapie.
+
+Poświata używa dwóch kierunków rozmycia w połowie rozdzielczości, a promienie 32 próbek i osobnej maski w połowie rozdzielczości. Jedna klatka wykorzystuje najwyżej 16 źródeł poświaty oraz 32 źródła gorącego powietrza. Bufory są ponownie używane, odtwarzane po zmianie rozmiaru okna i zwalniane przy zamknięciu aplikacji.
 
 - [GraphicsSettings.cs](GraphicsSettings.cs) — format i walidacja ustawień.
 - [WorldVisualFrame.cs](WorldVisualFrame.cs) — parametry shaderów świata i reguły dla wnętrz.
@@ -68,12 +82,20 @@ Poświata używa dwóch kierunków rozmycia w połowie rozdzielczości, a promie
 - [WorldLighting.cs](../World/WorldLighting.cs) — światła punktowe i animacja ognia, mgła oraz mokre podłoże we wspólnym kodzie shaderów materiałów.
 - [DynamicLightingChecks.cs](DynamicLightingChecks.cs) — sprawdzenie animacji świateł, przełączników i niezależności danych mapy.
 - [Hd2dGpuChecks.cs](Hd2dGpuChecks.cs) — porównanie pikseli głębi ostrości, korekcji kolorów i winiety.
+- [WorldEffectCatalog.cs](WorldEffectCatalog.cs) — wirtualne zasoby efektów do wstawiania i ich miniatury.
+- [WorldEffectParticles.cs](WorldEffectParticles.cs) — animowane cząsteczki dymu, pary, iskier i świetlików.
 
 ## Sprawdzenie
 
 ```sh
 dotnet run --project Runtime -- --graphics-test
 dotnet run --project Runtime -- --graphics-gpu-test
+dotnet run --project Runtime -- --water-flow-gpu-test
+dotnet run --project Editor -- --effects-interaction-test
 ```
 
 Pierwszy test działa bez okna i obejmuje ustawienia, walidację oraz deterministyczne migotanie ognia bez zmiany mapy. Drugi porównuje rzeczywiste piksele: wyłączenie efektów, mgłę głębi, zakotwiczone rośliny, kontury, poświatę ogniska, drganie obrazu nad ogniem, promienie, pogodę we wnętrzach i w nocy, mokry teren, deszcz, kręgi na wodzie oraz reakcję na trafienie. Sprawdza też rozmycie pierwszego planu i tła w obu rzutach, ostrość podążającą za bohaterem, neutralną i zmienioną korekcję kolorów, winietę oraz zmianę rozmiaru buforów. Zapisuje podglądy w `Editor/obj/graphics-*.png`, w tym `graphics-hd2d-*.png`.
+
+Test GPU obejmuje także emitery mapy. `--effects-interaction-test` sprawdza ich bibliotekę i obsługę w edytorze, w tym wstawianie, zaznaczanie, zmianę rozmiaru, cofanie, zapis i Play.
+
+`--water-flow-gpu-test` porównuje ruch fal zgodnie z namalowanym nurtem, przeciwny kierunek, lokalny zakręt i płynność odnowienia faz animacji. Sprawdza też izolację odległej wody i suchego terenu oraz przywrócenie zwykłej animacji po usunięciu nurtu. Podglądy zapisuje w `Editor/obj/water-flow-*.png`.

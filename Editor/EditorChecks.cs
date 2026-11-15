@@ -10,6 +10,8 @@ static class EditorChecks
         InventoryChecks.Run();
         MonsterChecks.Run();
         TerrainChecks.Run();
+        RiverBrushChecks.Run();
+        WaterFlowChecks.Run();
         MapSizeChecks.Run();
         RuntimeSettingsChecks.Run();
         WorldFeatureChecks.Run();

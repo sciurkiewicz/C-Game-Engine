@@ -13,6 +13,7 @@ static class WallMaterial
         float grain(vec2 p) { return fract(sin(dot(p, vec2(41.7, 289.3))) * 15731.743); }
         void main()
         {
+            clipWorld();
             if (wallSilhouette > 0.5) { finalColor = vec4(0.0, 0.0, 0.0, 1.0); return; }
             if (fragColor.a <= 0.001) discard;
             vec2 p = fragTexCoord;
@@ -121,6 +122,8 @@ sealed partial class WorldRenderer
 
     void DrawWalls(MapData map, Camera3D camera, float hour, WorldVisualFrame? visuals, bool transparent)
     {
+        bool capture=visuals?.WaterCapture==true;
+        if(capture && transparent)return;
         if (transparent ? wallOpacity.Count == 0 : map.RenderWallCount == 0) return;
         var shader = assets.WallShader;
         WorldLighting.Apply(shader, map, hour, camera.Target, visuals);
@@ -131,7 +134,7 @@ sealed partial class WorldRenderer
         if (transparent) { Rlgl.DrawRenderBatchActive(); Rlgl.DisableDepthMask(); }
         try
         {
-            var walls = transparent ? wallOpacity.Keys : map.Walls.AsEnumerable().Where(w => !wallOpacity.ContainsKey(w));
+            var walls = capture ? map.Walls : transparent ? wallOpacity.Keys.AsEnumerable() : map.Walls.AsEnumerable().Where(w => !wallOpacity.ContainsKey(w));
             if (!transparent) walls = walls.OrderBy(w => w.Style);
             if (transparent) walls = walls.OrderByDescending(w => Vector3.DistanceSquared((w.Geometry(map).Min + w.Geometry(map).Max) / 2, camera.Position));
             WallStyle? previousStyle = null;
@@ -139,7 +142,7 @@ sealed partial class WorldRenderer
             {
                 var geometry = wall.Geometry(map);
                 if (!wallFrustum.Intersects(geometry.Min, geometry.Max)) continue;
-                DrawWallGeometry(map, wall, Color.White, (byte)(wallOpacity.GetValueOrDefault(wall, 1) * 255), previousStyle != wall.Style);
+                DrawWallGeometry(map, wall, Color.White, capture ? (byte)255 : (byte)(wallOpacity.GetValueOrDefault(wall, 1) * 255), previousStyle != wall.Style);
                 previousStyle = wall.Style;
             }
         }

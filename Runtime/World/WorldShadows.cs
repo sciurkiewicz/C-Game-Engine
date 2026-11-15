@@ -33,6 +33,7 @@ sealed partial class WorldRenderer
         byte opacity = (byte)(100 * strength);
         void Shadow(string id, Vector3 feet, float height)
         {
+            if (WorldEffectCatalog.IsEffect(id)) return;
             // Use the cropped art's actual size, independently of collision shapes or solidity.
             float width = SpriteWidth(id, height);
             float radiusX = Math.Max(.025f, width * .55f), radiusZ = Math.Max(.025f, Math.Max(width * .32f, height * .10f));

@@ -130,9 +130,46 @@ static class EditorWorkflowChecks
         var rect = new Rectangle(100, 50, 200, 50);
         var point = map.GroundPosition(23, -4);
         Check(Vector3.Distance(TerrainOverview.Unproject(map, TerrainOverview.Project(map, point, rect), rect), point) < .001f, "rectangular minimap coordinates round-trip");
-        Check(TerrainOverview.Project(map, new(-40, 0, -10), rect) == new Vector2(100, 50), "minimap includes the full world bounds");
+        Check(Vector2.Distance(TerrainOverview.Project(map,new(-40,0,10),rect),new(100,50))<.001f,
+            "the default minimap's top-left corner follows the viewport's -Z right axis");
+        var available=new Rectangle(30,50,220,220);
+        var fitted=TerrainOverview.FitBounds(map,available);
+        Check(Math.Abs(fitted.Width/fitted.Height-.25f)<.0001f,
+            "a 90 degree overview swaps the display dimensions of a rectangular map");
+        foreach(float yaw in new[]{FollowCamera.DefaultYaw,FollowCamera.IsometricYaw})
+        {
+            var area=TerrainOverview.FitBounds(map,available,yaw);
+            var center=TerrainOverview.Project(map,Vector3.Zero,area,yaw);
+            var right=new Vector3(MathF.Cos(yaw),0,-MathF.Sin(yaw));
+            var down=new Vector3(MathF.Sin(yaw),0,MathF.Cos(yaw));
+            var rightPixel=TerrainOverview.Project(map,right*5,area,yaw);
+            var downPixel=TerrainOverview.Project(map,down*5,area,yaw);
+            Check(rightPixel.X>center.X&&Math.Abs(rightPixel.Y-center.Y)<.001f&&
+                downPixel.Y>center.Y&&Math.Abs(downPixel.X-center.X)<.001f,
+                "overview screen axes match the camera heading in each fixed projection");
+            foreach(var location in new Vector3[]{new(23,0,-4),new(-31,0,8),new(39,0,-9),Vector3.Zero})
+                Check(Vector3.Distance(TerrainOverview.Unproject(map,TerrainOverview.Project(map,location,area,yaw),area,yaw),location)<.001f,
+                    "click navigation reverses rotated projection for asymmetric world points");
+            foreach(float x in new[]{-map.Width*.5f,map.Width*.5f})
+            foreach(float z in new[]{-map.Depth*.5f,map.Depth*.5f})
+            {
+                var corner=TerrainOverview.Project(map,new(x,0,z),area,yaw);
+                Check(corner.X>=area.X-.001f&&corner.X<=area.X+area.Width+.001f&&
+                    corner.Y>=area.Y-.001f&&corner.Y<=area.Y+area.Height+.001f,
+                    "the complete rotated world fits its overview bounds");
+            }
+        }
+        var iso=TerrainOverview.Size(map,FollowCamera.IsometricYaw);
+        Check(Math.Abs(iso.X-iso.Y)<.001f,"isometric map bounds contain the entire rotated rectangle without stretching");
         var color = TerrainOverview.Sample(map, .5f, .5f, _ => new(90, 120, 60, 255));
         Check(color.G > color.R && color.A == 255, "overview uses the terrain material color");
+        map.WaterCells=Enumerable.Repeat((byte)3,map.Tiles.Length).ToArray(); map.WaterLevel=.25f;
+        map.WaterAppearance=map.WaterAppearance with{R=220,G=30,B=40,DeepR=100,DeepG=20,DeepB=30,Clarity=1};
+        color=TerrainOverview.Sample(map,.5f,.5f,_=>new(90,120,60,255));
+        Check(color.R>180&&color.G<40,"minimap water follows the authored shallow color");
+        map.WaterLevel=4;
+        color=TerrainOverview.Sample(map,.5f,.5f,_=>new(90,120,60,255));
+        Check(color.R==100&&color.G==20&&color.B==30,"deep minimap water follows the authored deep color");
     }
     static void Check(bool condition, string message)
     { if (!condition) throw new InvalidOperationException("Editor workflow check failed: " + message); }

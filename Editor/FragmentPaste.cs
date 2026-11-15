@@ -51,7 +51,8 @@ sealed partial class MapDocument
         var metadata = new MapData
         {
             Width = Map.Width, Depth = Map.Depth, Tiles = Map.Tiles, Type = Map.Type, Player = Map.Player, Runtime = Map.Runtime, Environment = Map.Environment,
-            WaterLevel = Map.WaterLevel, WaveHeight = Map.WaveHeight,
+            WaterLevel = Map.WaterLevel, WaveHeight = Map.WaveHeight, WaterAppearance = Map.WaterAppearance,
+            WaterFlow = options.Terrain ? new(Map.WaterFlow) : Map.WaterFlow,
             Objects = Keep(Map.Objects, e => e.X, e => e.Z, options.Actors), Npcs = Keep(Map.Npcs, e => e.X, e => e.Z, options.Actors),
             Chests = Keep(Map.Chests, e => e.X, e => e.Z, options.Actors), Monsters = Keep(Map.Monsters, e => e.X, e => e.Z, options.Actors),
             Lights = Keep(Map.Lights, e => e.X, e => e.Z, options.WorldFeatures), Sounds = Keep(Map.Sounds, e => e.X, e => e.Z, options.WorldFeatures),
@@ -60,6 +61,15 @@ sealed partial class MapDocument
             Walls = Replace(options.Walls) ? FragmentWalls.Outside(Map.Walls, bounds, new(-Map.Width / 2f, -Map.Depth / 2f, Map.Width / 2f, Map.Depth / 2f)) : Map.Walls.ToList(),
             WallCells = Map.WallCells.Where(c => !Replace(options.Walls) || c.X < region.X || c.X >= region.X + region.Width || c.Z < region.Z || c.Z >= region.Z + region.Depth).ToList()
         };
+        if (options.Terrain)
+            for (int z = 0; z < region.Depth; z++)
+            for (int x = 0; x < region.Width; x++)
+            {
+                int source = z * fragment.Width + x, destination = (region.Z + z) * Map.Width + region.X + x;
+                if (fragment.WaterFlow.TryGetValue(source, out var flow) && flow != default &&
+                    fragment.HasWaterSurface(source, Map.WaterLevel, shift)) metadata.WaterFlow[destination] = flow;
+                else metadata.WaterFlow.Remove(destination);
+            }
         var placed = options.Actors ? ScenePrefab.Clone(fragment.Actors) : new ScenePrefab();
         var ids = new Dictionary<string, string>();
         foreach (var entity in placed.Entities)
@@ -130,6 +140,7 @@ sealed partial class MapDocument
         Checkpoint();
         if (options.Terrain)
         {
+            Map.WaterFlow = metadata.WaterFlow;
             // Freeze legacy implicit water masks before replacing any material IDs.
             if (Map.WaterCells.Length == 0 && (fragment.HasWater || fragment.Tiles.Contains("water") || Map.Tiles.Contains("water")))
             { var water = Map.CopyWaterCells(); Map.WaterCells = water.Length == 0 ? new byte[Map.Tiles.Length] : water; }

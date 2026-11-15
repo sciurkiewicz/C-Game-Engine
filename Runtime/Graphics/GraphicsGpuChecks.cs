@@ -126,6 +126,7 @@ static class GraphicsGpuChecks
             { fx.Render(renderer,map,view,hiddenPlayer,dimensions.Item1,dimensions.Item2,12); }
             var all=Capture(new GraphicsSettings(),2,9); try { Preview(all,"all"); } finally { UnloadImage(all); }
             Hd2dGpuChecks.Run(assets);
+            PlaceableEffectsGpuChecks.Run(assets);
             Console.WriteLine("Graphics GPU checks passed: renderer bypass/colors, depth fog, anchored wind, outlines, animated nighttime lights, fire bloom, heat refraction, sun/night/interior gating, wet ground, animated rain/water ripples, real damage vignette and framebuffer resizing.");
         }
         finally { UnloadRenderTexture(target); assets.Sprites.Remove(plantId); assets.Terrain.Remove(groundId); UnloadTexture(plantTexture); UnloadTexture(groundTexture); }

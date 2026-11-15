@@ -7,9 +7,9 @@ sealed record SpriteAsset(string Id, Texture2D Texture, int PixelWidth = 0, int 
     public const float PixelsPerUnit = 128;
     public int SourceWidth => PixelWidth > 0 ? PixelWidth : Texture.Width;
     public int SourceHeight => PixelHeight > 0 ? PixelHeight : Texture.Height;
-    public string Name => Path.GetFileNameWithoutExtension(Id).Replace('_', ' ');
+    public string Name => WorldEffectCatalog.TryGet(Id, out var effect) ? effect.Name : Path.GetFileNameWithoutExtension(Id).Replace('_', ' ');
     public string Category => Id.StartsWith("objects/") ? Id.Split('/')[1] : "characters";
-    public float DefaultHeight => SourceHeight / PixelsPerUnit;
+    public float DefaultHeight => WorldEffectCatalog.TryGet(Id, out var effect) ? effect.DefaultHeight : SourceHeight / PixelsPerUnit;
     public bool DefaultSolid => !Id.Contains("/grass/") && !Id.Contains("/effects/");
 }
 
@@ -28,6 +28,10 @@ sealed class WorldAssets : IDisposable
     public TerrainChunkCache TerrainMeshes => terrainMeshes ??= new();
     GridWallChunkCache? wallMeshes;
     public GridWallChunkCache WallMeshes => wallMeshes ??= new();
+    WorldEffectParticles? effectParticles;
+    public WorldEffectParticles EffectParticles => effectParticles ??= new();
+    readonly WaterSurfaceTargets waterSurfaces = new();
+    public WaterSurfaceTargets WaterSurfaces => waterSurfaces;
     public void SynchronizeWallMeshes(MapData map, object renderer)
     { wallMeshes?.Synchronize(map); wallMeshes?.UseFadesFor(renderer); }
     public WorldAssets()
@@ -86,6 +90,7 @@ sealed class WorldAssets : IDisposable
         foreach (var (id, name) in defaultTerrain)
             if (!Terrain.ContainsKey(name))
                 throw new InvalidDataException("Cannot load required terrain texture: " + id);
+        WorldEffectCatalog.Register(this);
     }
     public void Dispose()
     {
@@ -93,6 +98,8 @@ sealed class WorldAssets : IDisposable
         terrainBlending?.Dispose();
         terrainMeshes?.Dispose();
         wallMeshes?.Dispose();
+        effectParticles?.Dispose();
+        waterSurfaces.Dispose();
         UnloadShader(ShadowShader);
         UnloadShader(WaterShader);
         UnloadShader(WallShader);
@@ -104,6 +111,7 @@ sealed class WorldAssets : IDisposable
 
 sealed partial class WorldRenderer(WorldAssets assets)
 {
+    int waterRenderWidth=1,waterRenderHeight=1;
     public static void Screenshot(string path)
     {
         var image = LoadImageFromScreen();
@@ -114,13 +122,15 @@ sealed partial class WorldRenderer(WorldAssets assets)
         Camera3D? terrainTextureView = null, WorldVisualFrame? visuals = null)
     {
         float hour = timeOfDay ?? map.Environment.TimeOfDay;
-        assets.SynchronizeWallMeshes(map, this);
+        bool waterCapture=visuals?.WaterCapture==true;
+        waterRenderWidth=viewWidth>0?viewWidth:GetScreenWidth();waterRenderHeight=viewHeight>0?viewHeight:GetScreenHeight();
+        assets.SynchronizeWallMeshes(map, waterCapture ? waterCaptureOwner : this);
         var bounds = TerrainVisibility.GetBounds(map, camera, viewWidth > 0 ? viewWidth : GetScreenWidth(), viewHeight > 0 ? viewHeight : GetScreenHeight(), maximumDistance);
         DrawTerrain(map, bounds, camera, hour, terrainTextureView ?? camera, visuals);
         Vector3 player = playerPosition ?? map.GroundPosition(map.Player.X, map.Player.Z);
-        DrawShadows(map, camera, player, hour, bounds);
+        if(!waterCapture)DrawShadows(map, camera, player, hour, bounds);
         wallFrustum.Configure(camera, viewWidth > 0 ? viewWidth : GetScreenWidth(), viewHeight > 0 ? viewHeight : GetScreenHeight());
-        UpdateWallOpacity(map, camera, playerPosition);
+        if(!waterCapture)UpdateWallOpacity(map, camera, playerPosition);
         DrawWalls(map, camera, hour, visuals, false);
         if (grid)
         {
@@ -134,7 +144,8 @@ sealed partial class WorldRenderer(WorldAssets assets)
                 DrawLine3D(GridPoint(x, z), GridPoint(x + 1, z), new Color(220, 230, 220, z % 10 == 0 ? 95 : 35));
         }
         var forward = Vector3.Normalize(camera.Target - camera.Position);
-        var items = map.SceneEntities.Select(o => (Entity: (SceneObject?)o, o.Asset, Position: map.GroundPosition(o), o.Height,
+        var items = map.SceneEntities.Where(o => o.GetType() != typeof(SceneObject) || !WorldEffectCatalog.IsEffect(o.Asset))
+            .Select(o => (Entity: (SceneObject?)o, o.Asset, Position: map.GroundPosition(o), o.Height,
                 Fallback: o is NpcData ? new Color(244, 192, 96, 255) : o is MonsterData ? new Color(222, 75, 86, 255) : o is ChestData ? new Color(190, 140, 70, 255) : Color.Magenta))
             .Append((null, map.Player.Asset ?? "", player, map.Player.Height, new Color(80, 183, 255, 255)))
             .OrderByDescending(o => Vector3.Dot(o.Item3 - camera.Position, forward));
@@ -145,9 +156,9 @@ sealed partial class WorldRenderer(WorldAssets assets)
         {
             foreach (var item in items)
             {
-                byte alpha = item.Entity == null ? (byte)255 : ObstacleAlpha(map, camera, item.Entity, playerPosition);
+                byte alpha = item.Entity == null || waterCapture ? (byte)255 : ObstacleAlpha(map, camera, item.Entity, playerPosition);
                 if (alpha < 255) { Rlgl.DrawRenderBatchActive(); Rlgl.DisableDepthMask(); }
-                DrawSpriteGeometry(camera, item.Asset, item.Position, item.Height, item.Fallback, alpha,
+                DrawSpriteGeometry(visuals?.BillboardCamera ?? camera, item.Asset, item.Position, item.Height, item.Fallback, alpha,
                     visuals?.Wind > 0 && WorldVisualFrame.Vegetation(item.Entity), false,
                     visuals?.Enabled == true && visuals.Settings.Outlines ? visuals.Settings.OutlineStrength : 0);
                 if (alpha < 255) { Rlgl.DrawRenderBatchActive(); Rlgl.EnableDepthMask(); }
@@ -156,11 +167,14 @@ sealed partial class WorldRenderer(WorldAssets assets)
         finally { EndShaderMode(); }
         if (obstacleOpacity.Count > map.Objects.Count + map.Chests.Count + map.Npcs.Count + map.Monsters.Count + 32)
         { var ids = map.SceneEntities.Select(o => o.Id).ToHashSet(); foreach (var id in obstacleOpacity.Keys.Where(id => !ids.Contains(id)).ToArray()) obstacleOpacity.Remove(id); }
-        DrawWater(map, camera, bounds, visuals?.Time ?? (float)GetTime(), hour, visuals);
+        if(!waterCapture)DrawWater(map, camera, bounds, visuals?.Time ?? (float)GetTime(), hour, visuals);
         DrawWalls(map, camera, hour, visuals, true);
+        if(!waterCapture)DrawEffectObjects(map, camera, visuals?.Time ?? (float)(GetTime()%3600), playerPosition);
     }
     public void DrawSprite(Camera3D camera, string id, Vector3 position, float height, Color fallback, byte alpha = 255)
     {
+        if (WorldEffectCatalog.IsEffect(id))
+        { DrawEffectPreview(camera,id,position,height,(float)(GetTime()%3600),alpha); return; }
         BeginShaderMode(assets.SpriteShader);
         try { DrawSpriteGeometry(camera, id, position, height, fallback, alpha); }
         finally { EndShaderMode(); }

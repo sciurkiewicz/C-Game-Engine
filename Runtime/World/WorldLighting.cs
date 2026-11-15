@@ -34,9 +34,14 @@ static class WorldLighting
         uniform float wetness;
         uniform float rainIntensity;
         uniform vec3 ambientLight;
+        uniform vec2 worldClip;
         uniform int lightCount;
         uniform vec4 lightPositionRadius[16];
         uniform vec4 lightColorIntensity[16];
+        void clipWorld()
+        {
+            if (worldClip.x != 0.0 && (fragPosition.y-worldClip.y)*worldClip.x < -0.015) discard;
+        }
         vec3 sceneLight()
         {
             vec3 light = ambientLight;

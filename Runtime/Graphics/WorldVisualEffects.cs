@@ -32,7 +32,8 @@ sealed class WorldVisualEffects : IDisposable
     RenderTexture2D scene, focused, bright, blurH, blurV, sunMask, rays;
     ProgramShader? brightShader, blurShader, raysShader, focusShader, composite;
     bool focusApplied;
-    Vector4[] heatSources = [];
+    readonly WorldHeatHaze heatHaze = new();
+    Texture2D worldTexture;
     Vector4 strengths;
     public GraphicsSettings Settings => settings;
     public float DamagePulse => damage;
@@ -77,7 +78,7 @@ sealed class WorldVisualEffects : IDisposable
         ReleaseTargets(); width = w; height = h;
         try
         {
-            scene = SceneTarget(w, h); focused = Target(w, h); bright = Target(Math.Max(1,w/2),Math.Max(1,h/2));
+            scene = SceneRenderTarget.Create(w, h); focused = Target(w, h); bright = Target(Math.Max(1,w/2),Math.Max(1,h/2));
             blurH = Target(bright.Texture.Width,bright.Texture.Height); blurV = Target(bright.Texture.Width,bright.Texture.Height);
             sunMask = Target(bright.Texture.Width,bright.Texture.Height); rays = Target(bright.Texture.Width,bright.Texture.Height);
         }
@@ -88,29 +89,6 @@ sealed class WorldVisualEffects : IDisposable
         var target = LoadRenderTexture(w,h);
         if (!IsRenderTextureValid(target)) throw new InvalidDataException("Cannot create graphics effects framebuffer.");
         SetTextureFilter(target.Texture, TextureFilter.Bilinear); SetTextureWrap(target.Texture, TextureWrap.Clamp); return target;
-    }
-    static RenderTexture2D SceneTarget(int w, int h)
-    {
-        // Raylib's default render target has an unsampleable depth renderbuffer.
-        // A depth texture reuses the world draw, including alpha-tested sprites, for autofocus.
-        var target = new RenderTexture2D { Id = Rlgl.LoadFramebuffer() };
-        try
-        {
-            if (target.Id == 0) throw new InvalidDataException("Cannot create scene framebuffer.");
-            var image = GenImageColor(w, h, Color.Black);
-            try { target.Texture = LoadTextureFromImage(image); }
-            finally { UnloadImage(image); }
-            if (!IsTextureValid(target.Texture)) throw new InvalidDataException("Cannot create scene color texture.");
-            Rlgl.FramebufferAttach(target.Id, target.Texture.Id, FramebufferAttachType.ColorChannel0, FramebufferAttachTextureType.Texture2D, 0);
-            target.Depth = new Texture2D { Id = Rlgl.LoadTextureDepth(w, h, false), Width = w, Height = h, Mipmaps = 1 };
-            Rlgl.FramebufferAttach(target.Id, target.Depth.Id, FramebufferAttachType.Depth, FramebufferAttachTextureType.Texture2D, 0);
-            if (target.Depth.Id == 0 || !Rlgl.FramebufferComplete(target.Id))
-                throw new InvalidDataException("Cannot create sampleable scene depth texture.");
-            SetTextureFilter(target.Texture, TextureFilter.Bilinear); SetTextureWrap(target.Texture, TextureWrap.Clamp);
-            SetTextureFilter(target.Depth, TextureFilter.Point); SetTextureWrap(target.Depth, TextureWrap.Clamp);
-            return target;
-        }
-        catch { if (target.Id != 0) UnloadRenderTexture(target); throw; }
     }
     static void Quad(Texture2D texture, Rectangle destination) => DrawTexturePro(texture, new(0,0,texture.Width,-texture.Height), destination, Vector2.Zero, 0, Color.White);
     static void Clear(RenderTexture2D target) { BeginTextureMode(target); ClearBackground(Color.Black); EndTextureMode(); }
@@ -124,9 +102,11 @@ sealed class WorldVisualEffects : IDisposable
     {
         w = Math.Max(1,w); h = Math.Max(1,h); EnsureTargets(w,h);
         var frame = new WorldVisualFrame(settings,time,camera,hour,map.Type == MapType.OpenWorld); LastFrame = frame;
+        renderer.PrepareWater(map,camera,w,h,hour,frame,player);
         BeginTextureMode(scene); ClearBackground(new(38,47,54,255)); BeginMode3D(camera);
         renderer.Draw(map,camera,false,player,w,h,hour,visuals: frame);
         EndMode3D(); EndTextureMode();
+        worldTexture = heatHaze.Apply(scene.Texture,scene.Depth,map,camera,time,w,h,settings);
         var resolution = new Vector2(w,h);
         focusApplied = settings.Enabled && settings.DepthOfField && settings.MaxBlurRadius > 0;
         if (focusApplied)
@@ -138,7 +118,7 @@ sealed class WorldVisualEffects : IDisposable
                 settings.FocusRange, settings.FocusFalloff, settings.MaxBlurRadius * h / 1080f));
             BeginTextureMode(focused); ClearBackground(Color.Black); BeginShaderMode(focusShader.Shader);
             focusShader.Texture("depthMap", scene.Depth);
-            Quad(scene.Texture, new(0,0,w,h)); EndShaderMode(); EndTextureMode();
+            Quad(worldTexture, new(0,0,w,h)); EndShaderMode(); EndTextureMode();
         }
         var forward = Vector3.Normalize(camera.Target-camera.Position);
         var lights = settings.Enabled && settings.Bloom ? WorldLighting.Nearby(map,camera.Target,frame)
@@ -155,7 +135,7 @@ sealed class WorldVisualEffects : IDisposable
             brightShader!.Float("threshold",settings.BloomThreshold); brightShader.Vec2("resolution",resolution);
             brightShader.Int("sourceCount",sources.Length); brightShader.Array("sources",sources);
             brightShader.Array("sourceColors",lights.Select(l=>new Vector4(l.R/255f,l.G/255f,l.B/255f,l.Intensity)).ToArray());
-            Pass(bright,scene.Texture,brightShader);
+            Pass(bright,worldTexture,brightShader);
             blurShader!.Vec2("direction",new(1f/bright.Texture.Width,0)); Pass(blurH,bright.Texture,blurShader);
             blurShader.Vec2("direction",new(0,1f/bright.Texture.Height)); Pass(blurV,blurH.Texture,blurShader);
         }
@@ -169,41 +149,29 @@ sealed class WorldVisualEffects : IDisposable
             raysShader!.Vec2("sunPosition",UV(sun,w,h)); Pass(rays,sunMask.Texture,raysShader);
         }
         else Clear(rays);
-        heatSources = settings.Enabled && settings.HeatDistortion && settings.HeatStrength > 0 ? map.Objects
-            .Where(o=>WorldLighting.IsFire(o.Asset) && Vector3.DistanceSquared(o.Position,camera.Target)<10000)
-            .OrderBy(o=>Vector3.DistanceSquared(o.Position,camera.Target)).Take(16).Select(o=>
-            {
-                var p=map.GroundPosition(o)+Vector3.UnitY*(o.Height+.6f);
-                if(Vector3.Dot(p-camera.Position,forward)<=0)return Vector4.Zero;
-                var at=GetWorldToScreenEx(p,camera,w,h);
-                var top=GetWorldToScreenEx(p+Vector3.UnitY*1.6f,camera,w,h);
-                float ry=Math.Clamp(Vector2.Distance(at,top)/h,.015f,.3f);
-                return new Vector4(UV(at,w,h),Math.Max(.01f,ry*h/w*.65f),ry);
-            }).Where(v=>v.Z>0).ToArray() : [];
         strengths = new(settings.Enabled&&settings.Bloom?settings.BloomStrength:0,
             settings.Enabled&&settings.SunRays?settings.SunRaysStrength*frame.Sunlight:0,frame.Rain,damage*settings.DamageStrength);
         composite!.Vec2("resolution",resolution); composite.Vec4("strengths",strengths);
         composite.Vec4("colorGrade", settings.ColorGrading ? new(settings.Exposure,settings.Contrast,settings.Saturation,settings.Temperature) : new(1,1,1,0));
         composite.Float("vignetteStrength",settings.Vignette ? settings.VignetteStrength : 0);
-        composite.Float("time",time); composite.Float("heatStrength",settings.HeatStrength);
-        composite.Int("heatCount",heatSources.Length); composite.Array("heatSources",heatSources);
+        composite.Float("time",time);
     }
     public void Draw(Rectangle bounds)
     {
         if (scene.Id == 0) return;
-        if (!settings.Enabled) { Quad(scene.Texture,bounds); return; }
+        if (!settings.Enabled) { Quad(worldTexture,bounds); return; }
         BeginShaderMode(composite!.Shader);
         composite.Texture("bloomMap",blurV.Texture); composite.Texture("raysMap",rays.Texture);
-        Quad(focusApplied ? focused.Texture : scene.Texture,bounds); EndShaderMode();
+        Quad(focusApplied ? focused.Texture : worldTexture,bounds); EndShaderMode();
     }
     void ReleaseTargets()
     {
         foreach(var t in new[]{scene,focused,bright,blurH,blurV,sunMask,rays})if(t.Id!=0)UnloadRenderTexture(t);
-        scene=focused=bright=blurH=blurV=sunMask=rays=default; width=height=0; focusApplied=false;
+        scene=focused=bright=blurH=blurV=sunMask=rays=default; worldTexture=default; width=height=0; focusApplied=false;
     }
     public void Dispose()
     {
-        ReleaseTargets(); brightShader?.Dispose(); blurShader?.Dispose(); raysShader?.Dispose(); focusShader?.Dispose(); composite?.Dispose();
+        ReleaseTargets(); heatHaze.Dispose(); brightShader?.Dispose(); blurShader?.Dispose(); raysShader?.Dispose(); focusShader?.Dispose(); composite?.Dispose();
         brightShader=blurShader=raysShader=focusShader=composite=null;
     }
 }

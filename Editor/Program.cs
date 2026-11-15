@@ -11,6 +11,16 @@ if (args.Contains("--editor-test"))
     EditorChecks.Run();
     return;
 }
+if(args.Contains("--river-test"))
+{
+    RiverBrushChecks.Run();
+    return;
+}
+if(args.Contains("--water-flow-test"))
+{
+    WaterFlowChecks.Run();
+    return;
+}
 SetConfigFlags(ConfigFlags.ResizableWindow | ConfigFlags.Msaa4xHint);
 InitWindow(1440, 900, "Wildwood | Map Editor");
 if (!IsWindowReady())
@@ -26,6 +36,10 @@ try
     int mapArgument = Array.IndexOf(args, "--map");
     if (mapArgument >= 0 && mapArgument + 1 >= args.Length) throw new ArgumentException("--map requires a JSON file path.");
     bool inventoryTest = args.Contains("--inventory-interaction-test");
+    bool effectsTest = args.Contains("--effects-interaction-test");
+    bool waterTest = args.Contains("--water-interaction-test");
+    bool riverTest = args.Contains("--river-interaction-test");
+    bool flowTest = args.Contains("--water-flow-interaction-test");
     bool dialogueLinkTest = args.Contains("--dialogue-link-interaction-test");
     bool dialogueSequenceTest = args.Contains("--dialogue-sequence-interaction-test");
     bool monsterTest = args.Contains("--monster-interaction-test");
@@ -39,11 +53,15 @@ try
     bool wallTest = args.Contains("--wall-interaction-test");
     bool gridWallTest = args.Contains("--grid-wall-interaction-test");
     bool wallPerformance = args.Contains("--wall-performance-test");
-    bool interactionTest = args.Contains("--interaction-test") || inventoryTest || dialogueLinkTest || dialogueSequenceTest || monsterTest || launchOptionsTest || worldTest || newMapTest || worldGpuTest || workflowTest || landscapeTest || fragmentTest || wallTest || gridWallTest;
+    bool interactionTest = args.Contains("--interaction-test") || flowTest || riverTest || waterTest || effectsTest || inventoryTest || dialogueLinkTest || dialogueSequenceTest || monsterTest || launchOptionsTest || worldTest || newMapTest || worldGpuTest || workflowTest || landscapeTest || fragmentTest || wallTest || gridWallTest;
     string mapPath = wallPerformance ? Path.Combine(ProjectPaths.Root, "Editor", "obj", "wall-performance-test.json") : interactionTest ? Path.Combine(ProjectPaths.Root, "Editor", "obj", "interaction-test.json") :
         mapArgument >= 0 ? Path.GetFullPath(args[mapArgument + 1]) : ProjectPaths.MapFile;
     using var editor = new EditorApp(mapPath, interactionTest || wallPerformance || args.Contains("--smoke-test"));
     if (wallPerformance) editor.RunWallPerformanceChecks(args.Contains("--baseline") ? "baseline" : "optimized");
+    else if (effectsTest) editor.RunEffectsInteractionChecks();
+    else if (waterTest) editor.RunWaterSettingsInteractionChecks();
+    else if (riverTest) editor.RunRiverBrushInteractionChecks();
+    else if (flowTest) editor.RunWaterFlowInteractionChecks();
     else if (gridWallTest) editor.RunGridWallInteractionChecks();
     else if (wallTest) editor.RunWallInteractionChecks();
     else if (fragmentTest) editor.RunFragmentInteractionChecks();

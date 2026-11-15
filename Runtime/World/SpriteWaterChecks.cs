@@ -21,6 +21,9 @@ static class SpriteWaterChecks
         try
         {
             var map = MapData.CreateEmpty(16, 16);
+            // Keep this alpha/depth fixture distinctly blue and opaque regardless of the default water palette.
+            map.WaterAppearance=new() { R=15,G=85,B=180,DeepR=8,DeepG=60,DeepB=150,Clarity=.1f,
+                ReflectionStrength=0,RefractionStrength=0,FoamStrength=0 };
             map.Environment.Shadows = false; // Isolate alpha/depth behavior from an object's ground shadow.
             map.WaterLevel = .5f; map.WaveHeight = 0; map.WaterCells = Enumerable.Repeat((byte)3, map.Tiles.Length).ToArray();
             map.Player.X = map.Player.Z = -7;

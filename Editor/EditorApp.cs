@@ -16,6 +16,7 @@ sealed partial class EditorApp : IDisposable
     readonly InventoryOverlay inventoryUi = new();
     readonly CombatOverlay combatUi = new();
     readonly WorldVisualEffects visualEffects = new();
+    readonly WorldHeatHaze editorHeatHaze = new();
     readonly WorldAudio audio = new();
     RenderTexture2D canvas;
     Vector3 focus;
@@ -44,7 +45,7 @@ sealed partial class EditorApp : IDisposable
         Card = new(33, 44, 57, 255), Border = new(49, 64, 79, 255), Text = new(222, 233, 239, 255),
         Muted = new(140, 160, 176, 255), Accent = new(104, 217, 175, 255);
     SceneObject? Selection => document.Map.SceneEntities.FirstOrDefault(o => o.Id == selectedId);
-    bool ModalOpen => pendingAction != null || creatingMap || dialogueNpcId != null || textEdit != null || ItemEditorOpen || monsterSettingsId != null || launchOptions != null || worldPage != null || launchMenuOpen || menuDismissedThisFrame || sceneSearchOpen || brushSettingsOpen || editorSettingsOpen || recoveryPrompt || recoveryListOpen || roadListOpen || fragmentLibraryOpen || fragmentOptionsOpen;
+    bool ModalOpen => pendingAction != null || creatingMap || dialogueNpcId != null || textEdit != null || ItemEditorOpen || monsterSettingsId != null || launchOptions != null || worldPage != null || waterSettingsOpen || launchMenuOpen || menuDismissedThisFrame || sceneSearchOpen || brushSettingsOpen || editorSettingsOpen || recoveryPrompt || recoveryListOpen || roadListOpen || fragmentLibraryOpen || fragmentOptionsOpen;
 
     public EditorApp(string mapPath, bool testing = false)
     {
@@ -101,7 +102,7 @@ sealed partial class EditorApp : IDisposable
         viewport = new(Left, Top, GetScreenWidth() - Left - Right, GetScreenHeight() - Top - Bottom);
         if (canvas.Texture.Width == (int)viewport.Width && canvas.Texture.Height == (int)viewport.Height) return;
         if (canvas.Id != 0) UnloadRenderTexture(canvas);
-        canvas = LoadRenderTexture((int)viewport.Width, (int)viewport.Height);
+        canvas = SceneRenderTarget.Create((int)viewport.Width, (int)viewport.Height);
         SetTextureFilter(canvas.Texture, TextureFilter.Bilinear);
     }
     bool InViewport => CheckCollisionPointRec(GetMousePosition(), viewport) && !OverMinimap;
@@ -115,6 +116,8 @@ sealed partial class EditorApp : IDisposable
     void Update(float dt)
     {
         menuDismissedThisFrame = false;
+        if(waterFlowStrokeActive && (tool!=EditTool.Water||!waterFlowBrush||ModalOpen||!InViewport||!IsMouseButtonDown(MouseButton.Left)))EndWaterFlowStroke();
+        if(riverStrokeActive && (tool!=EditTool.Water||!riverBrush||ModalOpen||!InViewport||!IsMouseButtonDown(MouseButton.Left)))EndRiverStroke();
         if (launchMenuOpen) { UpdateLaunchMenu(); return; }
         if (textEdit != null) { UpdateTextEdit(); return; }
         if (fragmentLibraryOpen) { if (IsKeyPressed(KeyboardKey.Escape)) fragmentLibraryOpen = false; return; }
@@ -132,6 +135,7 @@ sealed partial class EditorApp : IDisposable
         if (sceneSearchOpen) { UpdateSceneSearch(); return; }
         if (brushSettingsOpen) { if (IsKeyPressed(KeyboardKey.Escape)) brushSettingsOpen = false; return; }
         if (editorSettingsOpen) { if (IsKeyPressed(KeyboardKey.Escape)) editorSettingsOpen = false; return; }
+        if (waterSettingsOpen) { UpdateWaterSettings(); return; }
         if (worldPage != null) { UpdateWorldTools(); return; }
         if (launchOptions != null) { UpdateLaunchOptions(); return; }
         if (creatingMap) { UpdateNewMap(); return; }
@@ -180,7 +184,7 @@ sealed partial class EditorApp : IDisposable
         if (IsKeyPressed(KeyboardKey.Escape)) { tool = EditTool.Select; selectedId = null; selectedIds.Clear(); activePrefab = null; }
         if (UpdateMinimapInput()) return;
         if (UpdateEditorCamera(dt, ctrl))
-        { document.EndSculptStroke(); EndGridWallStroke(); gesture = dragging = dragArmed = false; marqueeStart = null; fragmentDragStart = null; return; }
+        { EndWaterFlowStroke(); EndRiverStroke(); document.EndSculptStroke(); EndGridWallStroke(); gesture = dragging = dragArmed = false; marqueeStart = null; fragmentDragStart = null; return; }
         if (UpdateFragmentTool()) return;
         if (UpdateWallTool()) return;
         if (UpdateMarquee()) return;
@@ -190,6 +194,8 @@ sealed partial class EditorApp : IDisposable
             gesture = false; dragging = false; dragArmed = false; roadDraggedPoint = -1;
         }
         if (!InViewport) return;
+        if(tool==EditTool.Water&&waterFlowBrush) { UpdateWaterFlowBrush();return; }
+        if(tool==EditTool.Water&&riverBrush) { UpdateRiverBrush();return; }
         var ground = MouseTerrainPoint;
         if (IsMouseButtonPressed(MouseButton.Left) && tool == EditTool.Select)
         {
@@ -283,6 +289,8 @@ sealed partial class EditorApp : IDisposable
     void Render()
     {
         var view = play?.Camera.View ?? camera.View;
+        if(play==null)renderer.PrepareWater(document.Map,view,(int)viewport.Width,(int)viewport.Height,
+            document.Map.Environment.TimeOfDay,terrainTextureView:camera.TerrainTextureView);
         if (play != null) visualEffects.Render(renderer,play.Map,visualEffects.View(view),play.Player,(int)viewport.Width,(int)viewport.Height,play.TimeOfDay);
         BeginTextureMode(canvas);
         ClearBackground(new Color(38, 47, 54, 255));
@@ -295,9 +303,12 @@ sealed partial class EditorApp : IDisposable
         if (play == null)
         {
             DrawWorldGizmos(view);
+            foreach (var emitter in document.Map.Objects.Where(o => o.Asset == WorldEffectCatalog.HeatHazeId))
+                renderer.DrawEffectPreview(view,emitter.Asset,document.Map.GroundPosition(emitter),emitter.Height,(float)(GetTime()%3600),60);
             DrawRoadPreview();
             DrawWallDraft(view);
             DrawFragmentPreview(view);
+            DrawWaterFlowOverlay();
             foreach (var selected in SelectionGroup)
                 renderer.DrawOutline(view, selected, Accent, document.Map);
             DrawCubeWires(document.Map.GroundPosition(document.Map.Player.X, document.Map.Player.Z) + new Vector3(0, .05f, 0), .8f, .1f, .8f, new Color(80, 183, 255, 255));
@@ -325,9 +336,14 @@ sealed partial class EditorApp : IDisposable
                 }
                 if (tool == EditTool.Water)
                 {
+                    if(waterFlowBrush)DrawWaterFlowPreview();
+                    else if(riverBrush)DrawRiverBrushPreview();
+                    else
+                    {
                     var color = ground.Y < document.Map.WaterLevel ? new Color(80, 183, 255, 255) : new Color(255, 177, 100, 255);
                     renderer.DrawBrush(document.Map, ground, .4f, color, false, document.Map.WaterLevel);
                     DrawLine3D(ground, new(ground.X, Math.Max(ground.Y, document.Map.WaterLevel) + .06f, ground.Z), color);
+                    }
                 }
                 if (tool == EditTool.Sculpt) renderer.DrawBrush(document.Map, ground, terrainErosion ? erosionRadius : terrainStamp ? stampRadius : sculptRadius, Accent, false);
             }
@@ -335,10 +351,12 @@ sealed partial class EditorApp : IDisposable
         EndMode3D();
         }
         EndTextureMode();
+        var canvasTexture = play == null ? editorHeatHaze.Apply(canvas.Texture,canvas.Depth,document.Map,view,
+            (float)(GetTime()%3600),(int)viewport.Width,(int)viewport.Height) : canvas.Texture;
         if (preferences.ShowMinimap && play == null) overview.Update(document.Map, assets);
         BeginDrawing();
         ClearBackground(Background);
-        DrawTexturePro(canvas.Texture, new(0, 0, canvas.Texture.Width, -canvas.Texture.Height), viewport, Vector2.Zero, 0, Color.White);
+        DrawTexturePro(canvasTexture, new(0, 0, canvasTexture.Width, -canvasTexture.Height), viewport, Vector2.Zero, 0, Color.White);
         DrawMarquee();
         DrawHeader();
         DrawPalette();
@@ -355,6 +373,7 @@ sealed partial class EditorApp : IDisposable
         if (dialogueNpcId != null) DrawDialogueEditor();
         if (creatingMap) DrawNewMap();
         if (worldPage != null) DrawWorldTools();
+        if (waterSettingsOpen) DrawWaterSettings();
         if (roadListOpen) DrawRoadList();
         if (fragmentLibraryOpen) DrawFragmentLibrary();
         if (fragmentOptionsOpen) DrawFragmentOptions();
@@ -424,12 +443,7 @@ sealed partial class EditorApp : IDisposable
         }
         if (tool == EditTool.Water)
         {
-            if (Button("Fill basin", 16, 146, 218, !eraseWater, play == null)) eraseWater = false;
-            if (Button("Drain basin", 16, 188, 218, eraseWater, play == null)) eraseWater = true;
-            Label("Click inside a terrain depression.", 16, 242, 13, Muted);
-            Label("Level is shared by this map.", 16, 264, 13, Muted);
-            Label("Shore follows the terrain.", 16, 296, 13, Accent);
-            Label("Dig the basin with Sculpt first.", 16, 328, 13, Muted);
+            DrawWaterPalette();
             return;
         }
         if (tool is EditTool.Player or EditTool.NPC or EditTool.Monster)
@@ -557,20 +571,28 @@ sealed partial class EditorApp : IDisposable
         }
         else if (tool == EditTool.Water)
         {
+            if(waterFlowBrush)DrawWaterFlowInspector(x);
+            else if(riverBrush)DrawRiverInspector(x);
+            else
+            {
             Label(eraseWater ? "Drain basin" : "Fill basin", x, 147, 16, Accent);
             Stepper("Water level", document.Map.WaterLevel, x, 184, document.SetWaterLevel, .25f);
             if (MouseTerrainPoint is { } waterPoint)
                 Label($"Depth at cursor: {Math.Max(0, document.Map.WaterLevel - waterPoint.Y):0.00} m", x, 266, 14, Text);
             if (Button(document.Map.WaveHeight > 0 ? "Waves: ON" : "Waves: OFF", x, 304, 218, document.Map.WaveHeight > 0))
             { document.Checkpoint(); document.Map.WaveHeight = document.Map.WaveHeight > 0 ? 0 : .08f; }
-            Label("Fill / drain with one click.", x, 364, 13, Muted);
-            Label("Depth comes from the terrain.", x, 390, 13, Muted);
+            if (Button("Wygląd wody...", x, 348, 218)) OpenWaterSettings();
+            Label("Fill / drain with one click.", x, 402, 13, Muted);
+            Label("Depth comes from the terrain.", x, 428, 13, Muted);
+            }
         }
         else if (tool == EditTool.Place)
         {
-            Label(activePrefab?.Name ?? Path.GetFileNameWithoutExtension(chosenAsset), x, 148, 16, Accent, 220);
-            Stepper("Height", placeHeight, x, 190, v => placeHeight = Math.Clamp(v, SceneObject.MinHeight, SceneObject.MaxHeight), .25f);
-            if (Button(placeSolid ? "Collision: ON" : "Collision: OFF", x, 248, 218, placeSolid)) placeSolid = !placeSolid;
+            bool placingEffect = activePrefab == null && WorldEffectCatalog.IsEffect(chosenAsset);
+            Label(activePrefab?.Name ?? (assets.Sprites.TryGetValue(chosenAsset,out var chosen) ? chosen.Name : Path.GetFileNameWithoutExtension(chosenAsset)), x, 148, 16, Accent, 220);
+            Stepper(placingEffect ? "Rozmiar efektu" : "Height", placeHeight, x, 190, v => placeHeight = Math.Clamp(v, SceneObject.MinHeight, SceneObject.MaxHeight), .25f);
+            if (placingEffect) Label("Efekt nie blokuje ruchu.",x,258,13,Muted);
+            else if (Button(placeSolid ? "Collision: ON" : "Collision: OFF", x, 248, 218, placeSolid)) placeSolid = !placeSolid;
             if (Button(objectBrush ? "Object brush: ON" : "Object brush: OFF", x, 294, 218, objectBrush, activePrefab == null))
             { EndEditorGesture(); objectBrush = !objectBrush; }
             if (objectBrush && activePrefab == null)
@@ -606,12 +628,17 @@ sealed partial class EditorApp : IDisposable
         else if (SelectionGroup is { Length: > 1 } group) DrawGroupInspector(x, group);
         else if (Selection is { } selected)
         {
-            Label(selected is NpcData actor ? actor.Name : selected is MonsterData namedMonster ? namedMonster.Name : selected is ChestData namedChest ? namedChest.Name : Path.GetFileNameWithoutExtension(selected.Asset), x, 148, 16, Accent, 220);
+            bool selectedEffect = selected.GetType() == typeof(SceneObject) && WorldEffectCatalog.IsEffect(selected.Asset);
+            Label(selected is NpcData actor ? actor.Name : selected is MonsterData namedMonster ? namedMonster.Name : selected is ChestData namedChest ? namedChest.Name : assets.Sprites.TryGetValue(selected.Asset,out var selectedAsset) ? selectedAsset.Name : Path.GetFileNameWithoutExtension(selected.Asset), x, 148, 16, Accent, 220);
             Stepper("X", selected.X, x, 184, v => ChangePosition(selected, v, selected.Z), .5f);
             Stepper("Z", selected.Z, x, 234, v => ChangePosition(selected, selected.X, v), .5f);
-            Stepper("Height", selected.Height, x, 284, v => { document.Checkpoint(); selected.Height = Math.Clamp(v, SceneObject.MinHeight, SceneObject.MaxHeight); }, .25f);
-            if (Button(selected.Solid ? "Collision: ON" : "Collision: OFF", x, 340, 132, selected.Solid)) { document.Checkpoint(); selected.Solid = !selected.Solid; }
-            if (Button("Edit shape", x + 140, 340, 78)) OpenWorldTools("Collision");
+            Stepper(selectedEffect ? "Rozmiar efektu" : "Height", selected.Height, x, 284, v => { document.Checkpoint(); selected.Height = Math.Clamp(v, SceneObject.MinHeight, SceneObject.MaxHeight); }, .25f);
+            if (selectedEffect) Label("Efekt nie blokuje ruchu.",x,350,13,Muted);
+            else
+            {
+                if (Button(selected.Solid ? "Collision: ON" : "Collision: OFF", x, 340, 132, selected.Solid)) { document.Checkpoint(); selected.Solid = !selected.Solid; }
+                if (Button("Edit shape", x + 140, 340, 78)) OpenWorldTools("Collision");
+            }
             if (Button("Duplicate", x, 385, 105)) Duplicate();
             if (Button("Delete", x + 113, 385, 105)) Delete();
             if (selected is NpcData npc)
@@ -723,6 +750,8 @@ sealed partial class EditorApp : IDisposable
     }
     bool Save()
     {
+        EndWaterFlowStroke();
+        EndRiverStroke();
         try { document.Save(mapPath); status = "Saved: " + Path.GetRelativePath(ProjectPaths.Root, mapPath); return true; }
         catch (Exception ex) when (ex is IOException or InvalidDataException or UnauthorizedAccessException) { status = "Save failed: " + ex.Message; return false; }
     }
@@ -850,6 +879,7 @@ sealed partial class EditorApp : IDisposable
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException) { Console.Error.WriteLine("Automatic save failed: " + ex.Message); }
         overview.Dispose();
         visualEffects.Dispose();
+        editorHeatHaze.Dispose();
         audio.Dispose();
         if (canvas.Id != 0) UnloadRenderTexture(canvas);
         assets.Dispose();

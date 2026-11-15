@@ -11,6 +11,7 @@ static class EditorFragmentChecks
         for (int z = 6; z < 12; z++)
         for (int x = 8; x < 16; x++) map.Tiles[z * 32 + x] = (x + z) % 2 == 0 ? "dirt" : "stone";
         map.WaterCells = new byte[map.Tiles.Length]; map.WaterCells[7 * 32 + 9] = 1; map.WaterCells[8 * 32 + 10] = 2;
+        map.WaterFlow[7 * 32 + 9] = new(1, 0); map.WaterFlow[8 * 32 + 10] = new(0, 1.5f);
         map.Objects.Add(new() { Id = "door", Asset = "objects/door.png", X = -6, Z = -4, IsDoor = true, Collider = new() { Kind = ColliderKind.Box, Width = 2, Depth = .5f, Rotation = 30 } });
         map.Objects.Add(new() { Id = "tree", Asset = "objects/vegetation/tree.png", X = -7, Z = -5, Height = 5 });
         map.Objects.Add(new() { Id = "outside", Asset = "objects/rock.png", X = 12, Z = 9 });
@@ -30,8 +31,8 @@ static class EditorFragmentChecks
     }
     public static void Run()
     {
-        CaptureAndLibrary(); PasteAndLinks(); Replacement(); WaterAndNoop(); BoundsAndAtomicity();
-        Console.WriteLine("Map fragment checks passed: bounded capture, frozen clipboard/library, terrain/water, clipped roads, actors/inventory/dialogues, link remapping, independent copies, replacement, limits, atomic failures and undo/redo.");
+        CaptureAndLibrary(); PasteAndLinks(); Replacement(); WaterAndNoop(); WaterFlow(); BoundsAndAtomicity();
+        Console.WriteLine("Map fragment checks passed: bounded capture, frozen clipboard/library, terrain/water/current, clipped roads, actors/inventory/dialogues, link remapping, independent copies, replacement, limits, atomic failures and undo/redo.");
     }
     static void CaptureAndLibrary()
     {
@@ -55,7 +56,9 @@ static class EditorFragmentChecks
         {
             fragment.Name = "Leśny obóz";
             var loaded = MapFragment.Load(fragment.Save(directory));
-            Check(loaded.Name == fragment.Name && loaded.Tiles.SequenceEqual(fragment.Tiles) && loaded.Heights.SequenceEqual(fragment.Heights) && loaded.Roads[1].Curve.SequenceEqual(crossing.Curve), "fragment library preserves content and clipped curves");
+            Check(loaded.Name == fragment.Name && loaded.Tiles.SequenceEqual(fragment.Tiles) && loaded.Heights.SequenceEqual(fragment.Heights) &&
+                loaded.WaterFlow.OrderBy(pair => pair.Key).SequenceEqual(fragment.WaterFlow.OrderBy(pair => pair.Key)) &&
+                loaded.Roads[1].Curve.SequenceEqual(crossing.Curve), "fragment library preserves content, current vectors and clipped curves");
         }
         finally { if (Directory.Exists(directory)) Directory.Delete(directory, true); }
         var wide = MapData.CreateEmpty(2048, 4); wide.SetVertexHeight(2048, 4, 4);
@@ -130,6 +133,110 @@ static class EditorFragmentChecks
         Check(!unchanged.PasteFragment(blank, new(0, 0, 1, 1), new()).Changed && !unchanged.Dirty && !unchanged.CanUndo, "identical pastes do not create history, including custom water settings");
         unchanged.Place("objects/tree.png", new(.5f, 0, .5f), 2, true); unchanged.Undo();
         unchanged.PasteFragment(blank, new(0, 0, 1, 1), new()); Check(unchanged.CanRedo, "no-op paste preserves redo history");
+    }
+    static void WaterFlow()
+    {
+        var source = MapData.CreateEmpty(8, 8); source.WaterLevel = 0;
+        for (int z = 0; z <= source.Depth; z++)
+        for (int x = 0; x <= source.Width; x++) source.SetVertexHeight(x, z, -2);
+        source.WaterCells = Enumerable.Repeat((byte)3, source.Tiles.Length).ToArray();
+        var first = new WaterFlowVector(1, .5f); var last = new WaterFlowVector(-.25f, 2);
+        source.WaterFlow[1 * 8 + 2] = first; source.WaterFlow[2 * 8 + 4] = last;
+        source.WaterFlow[1 * 8 + 1] = new(0, 1);
+        source.WaterCells[1 * 8 + 3] = 0; source.WaterFlow[1 * 8 + 3] = new(2, 0);
+        for (int z = 1; z <= 2; z++)
+        for (int x = 4; x <= 5; x++) source.SetVertexHeight(x, z, 1);
+        source.WaterFlow[1 * 8 + 4] = new(2, 0);
+        string original = source.Serialize(); var fragment = MapFragment.Capture(source, new(2, 1, 3, 2));
+        Check(source.Serialize() == original && fragment.WaterFlow.Count == 2 && fragment.WaterFlow[0] == first && fragment.WaterFlow[5] == last,
+            "capture reindexes sparse currents and omits outside, drained and elevated dry cells");
+        source.WaterFlow[1 * 8 + 2] = new(3, 0);
+        Check(fragment.WaterFlow[0] == first && !ReferenceEquals(fragment.WaterFlow, source.WaterFlow), "captured currents do not alias the source dictionary");
+
+        string json = System.Text.Json.JsonSerializer.Serialize(fragment);
+        var roundTrip = System.Text.Json.JsonSerializer.Deserialize<MapFragment>(json)!; roundTrip.Validate();
+        Check(roundTrip.WaterFlow.OrderBy(pair => pair.Key).SequenceEqual(fragment.WaterFlow.OrderBy(pair => pair.Key)) &&
+            !ReferenceEquals(roundTrip.WaterFlow, fragment.WaterFlow), "fragment JSON preserves independent local current vectors");
+        var legacyJson = System.Text.Json.Nodes.JsonNode.Parse(json)!.AsObject(); legacyJson.Remove(nameof(MapFragment.WaterFlow));
+        var legacy = System.Text.Json.JsonSerializer.Deserialize<MapFragment>(legacyJson.ToJsonString())!; legacy.Validate();
+        Check(legacy.WaterFlow.Count == 0, "fragments saved before local currents load as still water");
+        Dictionary<int, WaterFlowVector>[] invalid = [null!, new() { [-1] = first }, new() { [6] = first },
+            new() { [0] = new(float.NaN, 0) }, new() { [0] = new(0, float.PositiveInfinity) }, new() { [0] = new(4, .1f) }];
+        var valid = roundTrip.WaterFlow;
+        foreach (var currents in invalid)
+        {
+            roundTrip.WaterFlow = currents; bool rejected = false;
+            try { roundTrip.Validate(); } catch (InvalidDataException) { rejected = true; }
+            Check(rejected, "fragment validation rejects null, out-of-bounds, non-finite and excessive current vectors");
+        }
+        roundTrip.WaterFlow = valid;
+
+        var target = MapData.CreateEmpty(12, 8); target.WaterLevel = 0;
+        target.WaterAppearance = target.WaterAppearance with { R = 83, ReflectionStrength = .34f };
+        for (int z = 0; z <= target.Depth; z++)
+        for (int x = 0; x <= target.Width; x++) target.SetVertexHeight(x, z, -2);
+        target.WaterCells = Enumerable.Repeat((byte)3, target.Tiles.Length).ToArray();
+        var destination = new MapRegion(5, 3, 3, 2); int firstCell = 3 * 12 + 5, lastCell = 4 * 12 + 7;
+        // Interleaved keys expose accidental remove/reinsert changes in otherwise identical pastes.
+        target.WaterFlow[0] = new(0, -.5f); target.WaterFlow[firstCell] = new(-1, 0);
+        target.WaterFlow[95] = new(.5f, 0); target.WaterFlow[lastCell] = new(0, -1);
+        target.WaterFlow[firstCell + 1] = new(1, 0); target.WaterFlow[firstCell + 2] = new(1, 0);
+        target.WaterFlow[lastCell - 1] = new(1, 0);
+        // Stale vectors are permitted in stored fragments but must not create currents on dry terrain.
+        fragment.WaterFlow[1] = new(2, 0); fragment.WaterFlow[2] = new(2, 0);
+        var options = new FragmentPasteOptions { Actors = false, Roads = false, Walls = false, WorldFeatures = false };
+        var document = new MapDocument(target, true); string before = target.Serialize();
+        var result = document.PasteFragment(fragment, destination, options);
+        Check(result.Changed && document.Dirty && target.WaterFlow.Count == 4 && target.WaterFlow[firstCell] == first && target.WaterFlow[lastCell] == last &&
+            target.WaterFlow[0] == new WaterFlowVector(0, -.5f) && target.WaterFlow[95] == new WaterFlowVector(.5f, 0),
+            "terrain paste reindexes currents, replaces the entire footprint and preserves currents outside it");
+        fragment.WaterFlow[0] = new(3, 0);
+        Check(target.WaterFlow[firstCell] == first && !ReferenceEquals(target.WaterFlow, fragment.WaterFlow), "pasted currents do not alias the clipboard");
+        fragment.WaterFlow[0] = first;
+        string after = target.Serialize();
+        Check(MapData.Parse(after).Serialize() == after, "pasted sparse currents round trip through map JSON");
+        document.Undo(); Check(document.Map.Serialize() == before && !document.Dirty, "one undo restores terrain and every replaced or cleared current");
+        document.Redo(); Check(document.Map.Serialize() == after, "redo restores the exact pasted current JSON");
+
+        var unchanged = new MapDocument(MapData.Parse(after), true); var unchangedFlow = unchanged.Map.WaterFlow;
+        Check(!unchanged.PasteFragment(fragment, destination, options).Changed && !unchanged.Dirty && !unchanged.CanUndo &&
+            ReferenceEquals(unchanged.Map.WaterFlow, unchangedFlow) && unchanged.Map.Serialize() == after,
+            "matching currents and custom water appearance make terrain paste a true no-op without reordering dictionary keys");
+        unchanged.Place("objects/tree.png", new(.5f, 0, .5f), 2, true); unchanged.Undo();
+        Check(!unchanged.PasteFragment(fragment, destination, options).Changed && unchanged.CanRedo, "a no-op current paste preserves redo history");
+
+        var currentOnlyMap = MapData.Parse(after); currentOnlyMap.WaterFlow[firstCell] = new(-1, 0);
+        var currentOnly = new MapDocument(currentOnlyMap, true); string currentBefore = currentOnlyMap.Serialize();
+        Check(currentOnly.PasteFragment(fragment, destination, options).Changed && currentOnly.Dirty && currentOnly.Map.WaterFlow[firstCell] == first,
+            "a current-only difference is detected even when terrain and water masks already match");
+        currentOnly.Undo(); Check(currentOnly.Map.Serialize() == currentBefore && !currentOnly.Dirty, "current-only paste creates a complete undo checkpoint");
+        currentOnly.Redo(); Check(currentOnly.Map.Serialize() == after, "current-only redo restores the saved current values and ordering");
+
+        var cleared = new MapDocument(MapData.Parse(after), true);
+        Check(cleared.PasteFragment(legacy, destination, options).Changed && cleared.Map.WaterFlow.Count == 2 &&
+            !cleared.Map.WaterFlow.ContainsKey(firstCell) && !cleared.Map.WaterFlow.ContainsKey(lastCell) &&
+            cleared.Map.WaterCells.SequenceEqual(target.WaterCells) && cleared.Map.Heights.SequenceEqual(target.Heights),
+            "pasting a wet fragment without currents clears stale destination currents without changing matching geometry");
+        cleared.Undo(); Check(cleared.Map.Serialize() == after, "clearing currents through an older fragment is undoable");
+
+        var dry = MapFragment.Capture(MapData.CreateEmpty(4, 4), new(0, 0, 3, 2)); dry.WaterFlow[0] = new(2, 0);
+        var dryTarget = new MapDocument(MapData.Parse(after), true);
+        Check(dryTarget.PasteFragment(dry, destination, options).Changed && dryTarget.Map.WaterFlow.Count == 2 &&
+            Enumerable.Range(0, 6).All(cell => dryTarget.Map.WaterMask((destination.Z + cell / 3) * 12 + destination.X + cell % 3) == 0),
+            "dry terrain paste clears the whole destination current footprint even if source data contains stale vectors");
+        dryTarget.Undo(); Check(dryTarget.Map.Serialize() == after, "dry replacement restores water and currents together on undo");
+        var raised = new MapDocument(MapData.Parse(after), true);
+        Check(raised.PasteFragment(fragment, destination, options with { AlignWater = false, HeightOffset = 8 }).Changed &&
+            raised.Map.WaterFlow.Count == 2 && !raised.Map.HasWaterSurface(firstCell), "height offsets that leave the pasted bed dry do not retain currents");
+
+        dry.Actors.Objects.Add(new() { Asset = "objects/tree.png", X = .5f, Z = .5f });
+        var actorsOnly = new MapDocument(MapData.Parse(after), true); var actorFlow = actorsOnly.Map.WaterFlow;
+        var actorWater = actorsOnly.Map.WaterCells.ToArray(); var actorHeights = actorsOnly.Map.Heights.ToArray();
+        Check(actorsOnly.PasteFragment(dry, destination, options with { Terrain = false, Actors = true }).Changed &&
+            ReferenceEquals(actorFlow, actorsOnly.Map.WaterFlow) && actorsOnly.Map.WaterFlow.OrderBy(pair => pair.Key).SequenceEqual(target.WaterFlow.OrderBy(pair => pair.Key)) &&
+            actorsOnly.Map.WaterCells.SequenceEqual(actorWater) && actorsOnly.Map.Heights.SequenceEqual(actorHeights),
+            "actor-only paste preserves destination current values, dictionary, water masks and terrain");
+        actorsOnly.Undo(); Check(actorsOnly.Map.Serialize() == after, "actor-only undo preserves the authored current JSON");
     }
     static void BoundsAndAtomicity()
     {

@@ -35,7 +35,6 @@ sealed partial class WorldRenderer
         }
         for (int i = 0; i < segments; i++) DrawLine3D(Point(i), Point(i + 1), color);
     }
-    static readonly Vector3 Sun = Vector3.Normalize(new Vector3(-.35f, 1, -.45f));
     void DrawWater(MapData map, Camera3D camera, TerrainBounds bounds, float time, float hour, WorldVisualFrame? visuals)
     {
         var forward = Vector3.Normalize(camera.Target - camera.Position);
@@ -43,33 +42,43 @@ sealed partial class WorldRenderer
             .OrderByDescending(i => Vector3.Dot(new Vector3(i % map.Width - map.Width / 2f + .5f, map.WaterLevel,
                 i / map.Width - map.Depth / 2f + .5f) - camera.Position, forward)).ToArray();
         if (cells.Length == 0) return;
-        var ambient = WorldLighting.Ambient(map, hour);
-        var lights = WorldLighting.Nearby(map, camera.Target, visuals);
-        SetShaderValue(assets.WaterShader, GetShaderLocation(assets.WaterShader, "ambientLight"), ambient, ShaderUniformDataType.Vec3);
+        var appearance=map.WaterAppearance;var shader=assets.WaterShader;
+        bool captured=assets.WaterSurfaces.Matches(map,camera);
+        WorldLighting.Apply(shader,map,hour,camera.Target,visuals);
         WorldVisualFrame.Apply(assets.WaterShader, map, camera, visuals, VisualSurface.Water);
+        SetShaderValue(shader,GetShaderLocation(shader,"shallowColor"),appearance.ShallowColor,ShaderUniformDataType.Vec3);
+        SetShaderValue(shader,GetShaderLocation(shader,"deepColor"),appearance.DeepColor,ShaderUniformDataType.Vec3);
+        SetShaderValue(shader,GetShaderLocation(shader,"waterOptics"),new Vector4(appearance.Clarity,appearance.ReflectionStrength,
+            appearance.RefractionStrength,appearance.FoamStrength),ShaderUniformDataType.Vec4);
+        SetShaderValue(shader,GetShaderLocation(shader,"waterSurface"),new Vector3(time,map.WaveHeight,captured?1:0),ShaderUniformDataType.Vec3);
+        // Both captures retain the viewport resolution so underwater detail stays sharp.
+        SetShaderValue(shader,GetShaderLocation(shader,"waterViewport"),new Vector2(waterRenderWidth,waterRenderHeight),ShaderUniformDataType.Vec2);
         BeginShaderMode(assets.WaterShader);
-        Rlgl.DrawRenderBatchActive(); Rlgl.DisableDepthMask(); Rlgl.DisableBackfaceCulling();
-        Rlgl.SetTexture(0); Rlgl.Begin((int)DrawMode.Triangles);
+        Rlgl.DrawRenderBatchActive(); Rlgl.EnableDepthMask(); Rlgl.DisableBackfaceCulling();
+        void BindCaptures()
+        {
+            if(!captured)return;
+            SetShaderValueTexture(shader,GetShaderLocation(shader,"reflectionMap"),assets.WaterSurfaces.Reflection.Texture);
+            SetShaderValueTexture(shader,GetShaderLocation(shader,"refractionMap"),assets.WaterSurfaces.Refraction.Texture);
+        }
+        void WaterVertex(Vector3 point)
+        {
+            // Water uses this varying for the local current; Y keeps velocity recoverable if normalized.
+            var flow=map.SampleWaterFlow(point.X,point.Z);
+            Rlgl.Normal3f(flow.X,1,flow.Y);
+            Rlgl.TexCoord2f(Math.Max(0,map.WaterLevel-map.HeightAt(point.X,point.Z)),0);
+            Rlgl.Vertex3f(point.X,point.Y,point.Z);
+        }
+        BindCaptures();Rlgl.SetTexture(0);
         foreach (int cell in cells)
         foreach (var triangle in WaterGeometry.BuildTile(map, cell % map.Width, cell / map.Width, time))
         {
-            var normal = Vector3.Cross(triangle.B - triangle.A, triangle.C - triangle.A);
-            if (normal.LengthSquared() < 1e-10f) continue;
-            normal = Vector3.Normalize(normal);
-            float light = Math.Max(0, Vector3.Dot(normal, Sun));
-            float glint = MathF.Pow(Math.Max(0, Vector3.Dot(Vector3.Reflect(-Sun, normal), -forward)), 24);
-            float depth = Math.Clamp(triangle.Depth / 3, 0, 1);
-            byte r = (byte)Math.Clamp(25 + light * 26 + glint * 145 - depth * 12, 0, 255);
-            byte g = (byte)Math.Clamp(95 + light * 48 + glint * 120 - depth * 32, 0, 255);
-            byte b = (byte)Math.Clamp(135 + light * 52 + glint * 90 - depth * 28, 0, 255);
-            var illumination = WorldLighting.Evaluate(map, (triangle.A + triangle.B + triangle.C) / 3, ambient, lights);
-            Rlgl.Color4ub((byte)Math.Clamp(r * illumination.X, 0, 255), (byte)Math.Clamp(g * illumination.Y, 0, 255), (byte)Math.Clamp(b * illumination.Z, 0, 255), (byte)(175 + depth * 45));
-            Rlgl.Normal3f(normal.X, normal.Y, normal.Z);
-            Rlgl.Vertex3f(triangle.A.X, triangle.A.Y, triangle.A.Z);
-            Rlgl.Vertex3f(triangle.B.X, triangle.B.Y, triangle.B.Z);
-            Rlgl.Vertex3f(triangle.C.X, triangle.C.Y, triangle.C.Z);
+            // A batch rollover clears Raylib's extra texture bindings even though the shader stays active.
+            if(Rlgl.CheckRenderBatchLimit(3))BindCaptures();
+            Rlgl.Begin((int)DrawMode.Triangles);Rlgl.Color4ub(255,255,255,255);
+            WaterVertex(triangle.A);WaterVertex(triangle.B);WaterVertex(triangle.C);Rlgl.End();
         }
-        Rlgl.End(); Rlgl.DrawRenderBatchActive(); Rlgl.EnableBackfaceCulling(); Rlgl.EnableDepthMask();
+        Rlgl.DrawRenderBatchActive(); Rlgl.EnableBackfaceCulling(); Rlgl.EnableDepthMask();
         EndShaderMode();
     }
 }

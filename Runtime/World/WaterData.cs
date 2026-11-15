@@ -6,6 +6,7 @@ sealed partial class MapData
 {
     // Each bit selects one of the two terrain triangles. Water is independent of its bed material.
     public byte[] WaterCells { get; set; } = [];
+    public WaterAppearance WaterAppearance { get; set; } = new();
     public byte WaterMask(int cell) => WaterCells.Length > 0 ? WaterCells[cell] : Tiles[cell] == "water" ? (byte)3 : (byte)0;
     public byte[] CopyWaterCells()
     {
@@ -17,6 +18,9 @@ sealed partial class MapData
     {
         if (WaterCells == null || (WaterCells.Length != 0 && WaterCells.Length != Width * Depth) || WaterCells.Any(mask => mask > 3))
             throw new InvalidDataException("Invalid water area.");
+        if (WaterAppearance == null) throw new InvalidDataException("Missing water appearance.");
+        WaterAppearance.Validate();
+        ValidateWaterFlow();
     }
 }
 

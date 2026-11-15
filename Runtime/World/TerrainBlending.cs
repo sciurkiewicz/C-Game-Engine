@@ -14,6 +14,7 @@ sealed class TerrainBlending : IDisposable
     readonly RoadMaterialMask roads = new();
     readonly int atlasLayoutLocation, lookupLocation, lookupOriginLocation, mapSizeLocation, textureAxesLocation;
     readonly int roadMapLocation, roadWindowLocation;
+    readonly int shoreParametersLocation;
 
     public TerrainBlending()
     {
@@ -28,14 +29,60 @@ sealed class TerrainBlending : IDisposable
             uniform vec4 textureAxes; // reference view's horizontal right XZ and backward XZ
             uniform sampler2D roadMap;
             uniform vec4 roadWindow; // lookup origin XY, samples per world unit, enabled
+            uniform vec2 shoreParameters; // water level, any wet triangles in this lookup window
             out vec4 finalColor;
 
+            ivec2 lookupPixel(ivec2 cell)
+            {
+                return clamp(cell - ivec2(lookupOrigin), ivec2(0), textureSize(materialMap, 0) - 1);
+            }
             int materialAt(ivec2 cell)
             {
                 cell = clamp(cell, ivec2(0), ivec2(mapSize) - 1);
-                ivec2 pixel = clamp(cell - ivec2(lookupOrigin), ivec2(0), textureSize(materialMap, 0) - 1);
-                ivec3 id = ivec3(round(texelFetch(materialMap, pixel, 0).rgb * 255.0));
+                ivec3 id = ivec3(round(texelFetch(materialMap, lookupPixel(cell), 0).rgb * 255.0));
                 return id.r + id.g * 256 + id.b * 65536;
+            }
+            int wetMaskAt(ivec2 cell)
+            {
+                ivec2 pixel=cell-ivec2(lookupOrigin);
+                if(any(lessThan(cell,ivec2(0))) || any(greaterThanEqual(cell,ivec2(mapSize))) ||
+                    any(lessThan(pixel,ivec2(0))) || any(greaterThanEqual(pixel,textureSize(materialMap,0))))return 0;
+                return int(round(texelFetch(materialMap,pixel,0).a*255.0));
+            }
+            float edgeDistance(vec2 p,vec2 a,vec2 b)
+            {
+                vec2 edge=b-a;
+                return length(p-a-edge*clamp(dot(p-a,edge)/dot(edge,edge),0.0,1.0));
+            }
+            float wetTriangleDistance(vec2 p,int mask)
+            {
+                bool inCell=all(greaterThanEqual(p,vec2(0))) && all(lessThanEqual(p,vec2(1)));
+                if(inCell && (((mask&1)!=0 && p.x<=p.y) || ((mask&2)!=0 && p.x>=p.y)))return 0.0;
+                float distance=2.0;
+                if((mask&1)!=0)distance=min(distance,min(edgeDistance(p,vec2(0),vec2(0,1)),
+                    min(edgeDistance(p,vec2(0,1),vec2(1)),edgeDistance(p,vec2(1),vec2(0)))));
+                if((mask&2)!=0)distance=min(distance,min(edgeDistance(p,vec2(0),vec2(1)),
+                    min(edgeDistance(p,vec2(1),vec2(1,0)),edgeDistance(p,vec2(1,0),vec2(0)))));
+                return distance;
+            }
+            float shoreDistance(vec2 position)
+            {
+                ivec2 cell=ivec2(floor(position));
+                int mask=wetMaskAt(cell);
+                if(mask!=0 && wetTriangleDistance(position-vec2(cell),mask)==0.0)return 0.0;
+                float distance=2.0;
+                for(int z=-1;z<=1;z++)for(int x=-1;x<=1;x++)
+                {
+                    ivec2 neighbor=cell+ivec2(x,z); mask=wetMaskAt(neighbor);
+                    if(mask!=0)distance=min(distance,wetTriangleDistance(position-vec2(neighbor),mask));
+                }
+                return distance;
+            }
+            float shoreNoise(vec2 p)
+            {
+                vec2 cell=floor(p),f=fract(p);f=f*f*f*(f*(f*6.0-15.0)+10.0);
+                return mix(mix(visualNoise(cell),visualNoise(cell+vec2(1,0)),f.x),
+                    mix(visualNoise(cell+vec2(0,1)),visualNoise(cell+vec2(1)),f.x),f.y);
             }
             vec3 materialColor(int id)
             {
@@ -52,8 +99,26 @@ sealed class TerrainBlending : IDisposable
             }
             void main()
             {
+                clipWorld();
                 // Materials are anchored at tile centres. Smooth weights meet continuously across every edge.
                 vec2 position = fragTexCoord - 0.5;
+                float shore=0.0,wet=0.0;
+                if(shoreParameters.y>0.5)
+                {
+                    float height=fragPosition.y-shoreParameters.x;
+                    if(abs(height)<0.7)
+                    {
+                        float distance=shoreDistance(fragTexCoord);
+                        float proximity=1.0-smoothstep(0.05,0.85,distance);
+                        float variation=shoreNoise(fragPosition.xz*1.8+vec2(17.2,9.4));
+                        shore=proximity*(1.0-smoothstep(0.15,0.65,abs(height)));
+                        // Only blend weights move. Texture coordinates and their sharp ink details stay anchored.
+                        vec2 warp=vec2(shoreNoise(fragPosition.xz*1.31),shoreNoise(fragPosition.xz*1.73+23.6))-0.5;
+                        position+=warp*shore*0.36;
+                        wet=proximity*smoothstep(-0.65,-0.12,height)*
+                            (1.0-smoothstep(-0.06,0.22+variation*0.17,height));
+                    }
+                }
                 ivec2 cell = ivec2(floor(position));
                 vec2 weight = smoothstep(vec2(0.0), vec2(1.0), fract(position));
                 int a = materialAt(cell);
@@ -76,6 +141,11 @@ sealed class TerrainBlending : IDisposable
                         if (coverage > 0.0) color = mix(color, materialColor(id.r + id.g * 256 + id.b * 65536), coverage);
                     }
                 }
+                if(wet>0.0)
+                {
+                    float luminance=dot(color,vec3(0.2126,0.7152,0.0722));
+                    color=mix(color,vec3(luminance),wet*0.035)*(1.0-wet*0.16);
+                }
                 finalColor = vec4(atmosphere(wetGround(color * fragColor.rgb * sceneLight())), 1.0);
             }
             """);
@@ -88,6 +158,7 @@ sealed class TerrainBlending : IDisposable
         textureAxesLocation = GetShaderLocation(Shader, "textureAxes");
         roadMapLocation = GetShaderLocation(Shader, "roadMap");
         roadWindowLocation = GetShaderLocation(Shader, "roadWindow");
+        shoreParametersLocation = GetShaderLocation(Shader, "shoreParameters");
     }
 
     void UpdateAtlas(Dictionary<string, Texture2D> textures)
@@ -134,8 +205,8 @@ sealed class TerrainBlending : IDisposable
     public void Update(Dictionary<string, Texture2D> textures, MapData map, TerrainBounds bounds, Camera3D camera)
     {
         UpdateAtlas(textures);
-        int minX = Math.Max(0, bounds.MinX - 1), minZ = Math.Max(0, bounds.MinZ - 1);
-        int width = Math.Min(map.Width, bounds.MaxX + 1) - minX, height = Math.Min(map.Depth, bounds.MaxZ + 1) - minZ;
+        int minX = Math.Max(0, bounds.MinX - 2), minZ = Math.Max(0, bounds.MinZ - 2);
+        int width = Math.Min(map.Width, bounds.MaxX + 2) - minX, height = Math.Min(map.Depth, bounds.MaxZ + 2) - minZ;
         bool changed = false;
         if (lookup.Id == 0 || lookup.Width < width || lookup.Height < height)
         {
@@ -153,12 +224,24 @@ sealed class TerrainBlending : IDisposable
             finally { UnloadImage(image); }
         }
         int fallback = indices["grass"];
+        bool hasWetTriangles=false;
         for (int z = 0; z < height; z++)
         for (int x = 0; x < width; x++)
         {
             string material = map.Tiles[(minZ + z) * map.Width + minX + x];
             int id = indices.GetValueOrDefault(material == "water" ? "sand" : material, fallback);
-            var color = new Color(id & 255, (id >> 8) & 255, (id >> 16) & 255, 255);
+            int mapX=minX+x,mapZ=minZ+z;
+            byte water=map.WaterMask(mapZ*map.Width+mapX);
+            if(water!=0)
+            {
+                float a=map.VertexHeight(mapX,mapZ),b=map.VertexHeight(mapX,mapZ+1);
+                float c=map.VertexHeight(mapX+1,mapZ+1),d=map.VertexHeight(mapX+1,mapZ);
+                if(Math.Min(a,Math.Min(b,c))>=map.WaterLevel)water=(byte)(water&~1);
+                if(Math.Min(a,Math.Min(c,d))>=map.WaterLevel)water=(byte)(water&~2);
+            }
+            hasWetTriangles|=water!=0;
+            // RGB is the material ID; alpha carries the two actually submerged triangle bits.
+            var color = new Color(id & 255, (id >> 8) & 255, (id >> 16) & 255, (int)water);
             int pixel = z * lookup.Width + x;
             if (cells[pixel].R == color.R && cells[pixel].G == color.G && cells[pixel].B == color.B && cells[pixel].A == color.A) continue;
             cells[pixel] = color; changed = true;
@@ -166,6 +249,7 @@ sealed class TerrainBlending : IDisposable
         if (changed) UpdateTexture(lookup, cells);
         SetShaderValue(Shader, lookupOriginLocation, new Vector2(minX, minZ), ShaderUniformDataType.Vec2);
         SetShaderValue(Shader, mapSizeLocation, new Vector2(map.Width, map.Depth), ShaderUniformDataType.Vec2);
+        SetShaderValue(Shader,shoreParametersLocation,new Vector2(map.WaterLevel,hasWetTriangles?1:0),ShaderUniformDataType.Vec2);
         var down = new Vector2(camera.Position.X - camera.Target.X, camera.Position.Z - camera.Target.Z);
         // A top-down view gets its heading from screen-up instead of a zero-length ground direction.
         if (down.LengthSquared() < .000001f) down = new(-camera.Up.X, -camera.Up.Z);

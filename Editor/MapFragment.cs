@@ -31,6 +31,7 @@ sealed class MapFragment
     public string[] Tiles { get; set; } = [];
     public float[] Heights { get; set; } = [];
     public byte[] WaterCells { get; set; } = [];
+    public Dictionary<int, WaterFlowVector> WaterFlow { get; set; } = [];
     public float WaterLevel { get; set; }
     public ScenePrefab Actors { get; set; } = new();
     public List<RoadData> Roads { get; set; } = [];
@@ -45,6 +46,15 @@ sealed class MapFragment
     public bool Contains(float x, float z) => float.IsFinite(x) && float.IsFinite(z) && x >= 0 && z >= 0 && x < Width && z < Depth;
     public float VertexHeight(int x, int z) => Heights.Length == 0 ? 0 : Heights[z * (Width + 1) + x];
     public byte WaterMask(int cell) => WaterCells.Length > 0 ? WaterCells[cell] : Tiles[cell] == "water" ? (byte)3 : (byte)0;
+    internal bool HasWaterSurface(int cell, float level, float heightOffset = 0)
+    {
+        byte mask = WaterMask(cell);
+        if (mask == 0) return false;
+        int x = cell % Width, z = cell / Width;
+        float a = VertexHeight(x, z) + heightOffset, c = VertexHeight(x + 1, z + 1) + heightOffset;
+        return ((mask & 1) != 0 && Math.Min(Math.Min(a, c), VertexHeight(x, z + 1) + heightOffset) < level) ||
+            ((mask & 2) != 0 && Math.Min(Math.Min(a, c), VertexHeight(x + 1, z) + heightOffset) < level);
+    }
     public float HeightAt(float x, float z)
     {
         float px = Math.Clamp(x, 0, Width), pz = Math.Clamp(z, 0, Depth);
@@ -63,6 +73,8 @@ sealed class MapFragment
         {
             int source = (region.Z + z) * map.Width + region.X + x, destination = z * region.Width + x;
             fragment.Tiles[destination] = map.Tiles[source]; water[destination] = map.WaterMask(source);
+            if (map.WaterFlow.TryGetValue(source, out var flow) && flow != default && map.HasWaterSurface(source))
+                fragment.WaterFlow[destination] = flow;
         }
         if (water.Any(value => value != 0) || fragment.Tiles.Contains("water")) fragment.WaterCells = water;
         if (map.Heights.Length > 0)
@@ -103,6 +115,8 @@ sealed class MapFragment
             (Heights.Length != 0 && Heights.Length != (Width + 1) * (Depth + 1)) ||
             Heights.Any(h => !MapData.FiniteRange(h, MapData.MinElevation, MapData.MaxElevation) || h != MapData.SnapElevation(h)) ||
             WaterCells == null || (WaterCells.Length != 0 && WaterCells.Length != Tiles.Length) || WaterCells.Any(mask => mask > 3) ||
+            WaterFlow == null || WaterFlow.Count > Width * Depth || WaterFlow.Any(pair => pair.Key < 0 || pair.Key >= Width * Depth ||
+                !float.IsFinite(pair.Value.X) || !float.IsFinite(pair.Value.Z) || (double)pair.Value.X * pair.Value.X + (double)pair.Value.Z * pair.Value.Z > 16.00001) ||
             !MapData.FiniteRange(WaterLevel, MapData.MinElevation, MapData.MaxElevation) || Actors == null || Actors.Objects == null || Actors.Npcs == null || Actors.Chests == null || Actors.Monsters == null ||
             Actors.Version != 1 || string.IsNullOrWhiteSpace(Actors.Name) || Actors.Name.Length > 80 ||
             Actors.Objects.Count > 10000 || Actors.Npcs.Count > 1000 || Actors.Chests.Count > 1000 || Actors.Monsters.Count > 1000 ||
