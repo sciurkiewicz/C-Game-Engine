@@ -138,7 +138,7 @@ sealed partial class WorldRenderer(WorldAssets assets)
                 Fallback: o is NpcData ? new Color(244, 192, 96, 255) : o is MonsterData ? new Color(222, 75, 86, 255) : o is ChestData ? new Color(190, 140, 70, 255) : Color.Magenta))
             .Append((null, map.Player.Asset ?? "", player, map.Player.Height, new Color(80, 183, 255, 255)))
             .OrderByDescending(o => Vector3.Dot(o.Item3 - camera.Position, forward));
-        WorldLighting.Apply(assets.SpriteShader, map, hour, camera.Target);
+        WorldLighting.Apply(assets.SpriteShader, map, hour, camera.Target, visuals);
         WorldVisualFrame.Apply(assets.SpriteShader, map, camera, visuals, VisualSurface.Sprite);
         BeginShaderMode(assets.SpriteShader);
         try

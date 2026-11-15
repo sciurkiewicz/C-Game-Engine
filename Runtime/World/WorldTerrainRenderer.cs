@@ -9,7 +9,7 @@ sealed partial class WorldRenderer
         if (bounds.TileCount == 0) return;
         var blending = assets.TerrainBlending;
         blending.Update(assets.Terrain, map, bounds, terrainTextureView);
-        WorldLighting.Apply(blending.Shader, map, hour, camera.Target);
+        WorldLighting.Apply(blending.Shader, map, hour, camera.Target, visuals);
         WorldVisualFrame.Apply(blending.Shader, map, camera, visuals, VisualSurface.Terrain);
         assets.TerrainMeshes.Draw(map, bounds, blending);
     }
@@ -44,7 +44,7 @@ sealed partial class WorldRenderer
                 i / map.Width - map.Depth / 2f + .5f) - camera.Position, forward)).ToArray();
         if (cells.Length == 0) return;
         var ambient = WorldLighting.Ambient(map, hour);
-        var lights = WorldLighting.Nearby(map, camera.Target);
+        var lights = WorldLighting.Nearby(map, camera.Target, visuals);
         SetShaderValue(assets.WaterShader, GetShaderLocation(assets.WaterShader, "ambientLight"), ambient, ShaderUniformDataType.Vec3);
         WorldVisualFrame.Apply(assets.WaterShader, map, camera, visuals, VisualSurface.Water);
         BeginShaderMode(assets.WaterShader);

@@ -7,7 +7,7 @@ Projekt ma dwa katalogi aplikacji:
 
 Logika rozgrywki jest w [Runtime/Mechanics/](Runtime/Mechanics/), a dane bohatera, NPC i przeciwników w [Runtime/Characters/](Runtime/Characters/). [Profil bohatera](Runtime/Characters/player.json) zawiera nazwę, opis, HP, obrażenia, prędkości i zasięgi; gra i Play odczytują go przy rozpoczęciu rozgrywki. Szczegóły edycji opisuje [instrukcja postaci](Runtime/Characters/README.md).
 
-[Runtime/Graphics/effects.json](Runtime/Graphics/effects.json) ustawia mgłę, wiatr roślin, poświatę, promienie światła, kontury, gorące powietrze, deszcz z mokrymi powierzchniami oraz reakcję na obrażenia. Każdy efekt można wyłączyć lub dostosować jego intensywność. Zestaw działa w grze i podglądzie Play; szczegóły są w [instrukcji grafiki](Runtime/Graphics/README.md).
+[Runtime/Graphics/effects.json](Runtime/Graphics/effects.json) ustawia 12 efektów: mgłę, wiatr roślin, poświatę, dynamiczne światło ognia, głębię ostrości podążającą za bohaterem, korekcję kolorów, winietę, promienie światła, kontury, gorące powietrze, deszcz z mokrymi powierzchniami oraz reakcję na obrażenia. Domyślnie są włączone; każdy można wyłączyć lub dostosować jego intensywność. Działają w grze i podglądzie Play, także z kamerą izometryczną. Nowa gra lub ponowne włączenie Play odczytuje zmieniony JSON; widok edycji mapy zachowuje surowy obraz. Szczegóły i zakresy parametrów są w [instrukcji grafiki](Runtime/Graphics/README.md).
 
 ## Uruchomienie
 

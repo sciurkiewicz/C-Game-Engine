@@ -102,17 +102,32 @@ static class WorldLighting
     public static bool Enabled(MapData map) => map.AlwaysDark || map.Environment.Lighting;
     public static Vector3 Ambient(MapData map, float hour) => map.AlwaysDark ? Ambient(0) :
         map.Environment.Lighting ? Ambient(hour) : Vector3.One;
-    public static IEnumerable<PointLightData> AllLights(MapData map)
+    public static IEnumerable<PointLightData> AllLights(MapData map, WorldVisualFrame? frame = null)
     {
         foreach (var light in map.Lights.Where(l => l.Enabled)) yield return light;
         foreach (var fire in map.Objects.Where(o => IsFire(o.Asset)))
-            yield return new() { Id = fire.Id, X = fire.X, Z = fire.Z, Height = Math.Min(fire.Height, 2), Radius = 6, Intensity = .85f, R = 255, G = 155, B = 65 };
+            yield return new() { Id = fire.Id, X = fire.X, Z = fire.Z, Height = Math.Min(fire.Height, 2), Radius = 6,
+                Intensity = FireIntensity(fire.Id, frame), R = 255, G = 155, B = 65 };
+    }
+    static float FireIntensity(string id, WorldVisualFrame? frame)
+    {
+        const float baseIntensity = .85f;
+        if (frame?.Enabled != true || !frame.Settings.DynamicLights || frame.Settings.LightFlickerStrength <= 0 ||
+            frame.Settings.LightFlickerSpeed <= 0 || !float.IsFinite(frame.Time)) return baseIntensity;
+        // Stable per-object phases keep different flames independent without changing authored light data.
+        uint seed = 2166136261;
+        foreach (char character in id) seed = unchecked((seed ^ character) * 16777619);
+        float phase = (seed & 65535) * (MathF.Tau / 65536);
+        float time = frame.Time * frame.Settings.LightFlickerSpeed;
+        float flicker = .55f * MathF.Sin(time * 7.3f + phase) +
+            .30f * MathF.Sin(time * 13.1f + phase * 1.7f) + .15f * MathF.Sin(time * 23.7f + phase * 2.3f);
+        return baseIntensity * (1 + flicker * Math.Clamp(frame.Settings.LightFlickerStrength, 0, 1));
     }
     public static bool IsFire(string id) => id.Contains("campfire", StringComparison.OrdinalIgnoreCase) ||
         id.Contains("torch", StringComparison.OrdinalIgnoreCase) || id.Contains("ognisko", StringComparison.OrdinalIgnoreCase) ||
         id.Contains("pochodnia", StringComparison.OrdinalIgnoreCase);
-    public static PointLightData[] Nearby(MapData map, Vector3 focus) => Enabled(map)
-        ? AllLights(map).OrderBy(l => Vector2.DistanceSquared(new(l.X, l.Z), new(focus.X, focus.Z))).Take(16).ToArray() : [];
+    public static PointLightData[] Nearby(MapData map, Vector3 focus, WorldVisualFrame? frame = null) => Enabled(map)
+        ? AllLights(map, frame).OrderBy(l => Vector2.DistanceSquared(new(l.X, l.Z), new(focus.X, focus.Z))).Take(16).ToArray() : [];
     public static Vector3 Evaluate(MapData map, Vector3 point, Vector3 ambient, PointLightData[] lights)
     {
         var result = ambient;
@@ -124,9 +139,9 @@ static class WorldLighting
         }
         return result;
     }
-    public static void Apply(Shader shader, MapData map, float hour, Vector3 focus)
+    public static void Apply(Shader shader, MapData map, float hour, Vector3 focus, WorldVisualFrame? frame = null)
     {
-        var lights = Nearby(map, focus);
+        var lights = Nearby(map, focus, frame);
         SetShaderValue(shader, GetShaderLocation(shader, "ambientLight"), Ambient(map, hour), ShaderUniformDataType.Vec3);
         SetShaderValue(shader, GetShaderLocation(shader, "lightCount"), lights.Length, ShaderUniformDataType.Int);
         if (lights.Length == 0) return;

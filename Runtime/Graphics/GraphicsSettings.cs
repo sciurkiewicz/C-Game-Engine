@@ -15,6 +15,20 @@ sealed record GraphicsSettings
     public bool Bloom { get; init; } = true;
     public float BloomStrength { get; init; } = .28f;
     public float BloomThreshold { get; init; } = .72f;
+    public bool DynamicLights { get; init; } = true;
+    public float LightFlickerStrength { get; init; } = .18f;
+    public float LightFlickerSpeed { get; init; } = 1.6f;
+    public bool DepthOfField { get; init; } = true;
+    public float FocusRange { get; init; } = 4;
+    public float FocusFalloff { get; init; } = 12;
+    public float MaxBlurRadius { get; init; } = 7;
+    public bool ColorGrading { get; init; } = true;
+    public float Exposure { get; init; } = 1;
+    public float Contrast { get; init; } = 1.08f;
+    public float Saturation { get; init; } = .95f;
+    public float Temperature { get; init; } = .06f;
+    public bool Vignette { get; init; } = true;
+    public float VignetteStrength { get; init; } = .22f;
     public bool SunRays { get; init; } = true;
     public float SunRaysStrength { get; init; } = .14f;
     public bool Outlines { get; init; } = true;
@@ -48,10 +62,15 @@ sealed record GraphicsSettings
             !MapData.FiniteRange(FogEnd, FogStart + 1, 512) || !MapData.FiniteRange(GroundFog, 0, 1) ||
             !MapData.FiniteRange(WindStrength, 0, 1) || !MapData.FiniteRange(WindSpeed, 0, 10) ||
             !MapData.FiniteRange(BloomStrength, 0, 2) || !MapData.FiniteRange(BloomThreshold, .1f, 1) ||
+            !MapData.FiniteRange(LightFlickerStrength, 0, 1) || !MapData.FiniteRange(LightFlickerSpeed, 0, 10) ||
+            !MapData.FiniteRange(FocusRange, .25f, 64) || !MapData.FiniteRange(FocusFalloff, .25f, 128) ||
+            !MapData.FiniteRange(MaxBlurRadius, 0, 24) || !MapData.FiniteRange(Exposure, .25f, 4) ||
+            !MapData.FiniteRange(Contrast, .5f, 1.5f) || !MapData.FiniteRange(Saturation, 0, 2) ||
+            !MapData.FiniteRange(Temperature, -1, 1) || !MapData.FiniteRange(VignetteStrength, 0, 1) ||
             !MapData.FiniteRange(SunRaysStrength, 0, 1) || !MapData.FiniteRange(OutlineStrength, 0, 1) ||
             !MapData.FiniteRange(OutlineWidth, .25f, 4) || !MapData.FiniteRange(HeatStrength, 0, .03f) ||
             !MapData.FiniteRange(RainIntensity, 0, 1) || !MapData.FiniteRange(Wetness, 0, 1) ||
             !MapData.FiniteRange(DamageStrength, 0, 1) || !MapData.FiniteRange(DamageDuration, .1f, 3) || !MapData.FiniteRange(CameraShake, 0, .5f))
-            throw new InvalidDataException("Invalid fog, wind, bloom, rays, outline, heat, rain or damage intensity in graphics settings.");
+            throw new InvalidDataException("Invalid fog, wind, bloom, lighting, focus, color, vignette, rays, outline, heat, rain or damage intensity in graphics settings.");
     }
 }

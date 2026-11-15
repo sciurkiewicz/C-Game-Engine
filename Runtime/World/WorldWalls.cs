@@ -123,7 +123,7 @@ sealed partial class WorldRenderer
     {
         if (transparent ? wallOpacity.Count == 0 : map.RenderWallCount == 0) return;
         var shader = assets.WallShader;
-        WorldLighting.Apply(shader, map, hour, camera.Target);
+        WorldLighting.Apply(shader, map, hour, camera.Target, visuals);
         WorldVisualFrame.Apply(shader, map, camera, visuals, VisualSurface.Wall);
         SetShaderValue(shader, GetShaderLocation(shader, "wallSilhouette"), 0f, ShaderUniformDataType.Float);
         if (!transparent && map.WallCells.Count > 0) assets.WallMeshes.Draw(map, wallFrustum, shader);

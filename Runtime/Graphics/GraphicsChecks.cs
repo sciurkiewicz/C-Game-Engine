@@ -9,9 +9,20 @@ static class GraphicsChecks
         foreach(var invalid in new[] { settings with { FogStrength = float.NaN },settings with { FogEnd = 1 },
             settings with { WindStrength = -1 },settings with { BloomStrength = 10 },settings with { SunRaysStrength = float.PositiveInfinity },
             settings with { OutlineWidth = 0 },settings with { HeatStrength = 1 },settings with { RainIntensity = 2 },
-            settings with { Wetness = -1 },settings with { DamageDuration = 0 },settings with { CameraShake = 100 } })
+            settings with { Wetness = -1 },settings with { DamageDuration = 0 },settings with { CameraShake = 100 },
+            settings with { LightFlickerStrength = 2 },settings with { LightFlickerSpeed = -1 },
+            settings with { FocusRange = 0 },settings with { FocusFalloff = float.NaN },settings with { MaxBlurRadius = 25 },
+            settings with { Exposure = 0 },settings with { Contrast = 2 },settings with { Saturation = -1 },
+            settings with { Temperature = float.PositiveInfinity },settings with { VignetteStrength = -1 } })
             ExpectInvalid(invalid.Validate);
         var camera = new FollowCamera(Vector3.Zero).View;
+        float focus = WorldFocus.Distance(camera, Vector3.Zero, 2, 1.6f);
+        Check(Math.Abs(focus - Vector3.Dot(Vector3.UnitY - camera.Position, Vector3.Normalize(camera.Target-camera.Position))) < .001f,
+            "focus tracks the middle of the hero along the camera depth axis");
+        Check(WorldFocus.Distance(camera, new(10000,0,0), 2, 1.6f) == Vector3.Distance(camera.Position,camera.Target),
+            "off-screen player previews focus on the camera target");
+        var raised = camera; raised.Position += new Vector3(0,7,0); raised.Target += new Vector3(0,7,0);
+        Check(Math.Abs(WorldFocus.Distance(raised,new(0,7,0),2,1.6f)-focus)<.001f,"terrain height preserves the focal distance");
         var outside = new WorldVisualFrame(settings,1,camera,12,true);
         var inside = outside with { Outdoors = false };
         Check(outside.Rain>0&&outside.Wetness>0&&outside.Wind>0&&outside.Sunlight>0,"outdoor effects are enabled");
@@ -41,7 +52,8 @@ static class GraphicsChecks
             File.WriteAllText(file,"{\"RainIntensity\":-1}"); ExpectInvalid(()=>GraphicsSettings.Load(file));
         }
         finally { Directory.Delete(folder,true); }
-        Console.WriteLine("Graphics checks passed: configuration, validation, outdoor/night gating, vegetation/fire detection, damage/shake, decay and map isolation.");
+        DynamicLightingChecks.Run();
+        Console.WriteLine("Graphics checks passed: configuration, validation, player focus/terrain height, outdoor/night gating, vegetation/fire detection, damage/shake, decay and map isolation.");
     }
     static void ExpectInvalid(Action action)
     { try { action(); } catch(InvalidDataException) { return; } throw new InvalidOperationException("Invalid graphics settings accepted."); }

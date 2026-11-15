@@ -23,7 +23,8 @@ static class GraphicsGpuChecks
         var view=new FollowCamera(Vector3.Zero,new(){InitialDistance=22}).View;
         var hiddenPlayer=new Vector3(-100,0,-100);
         var play=new PlaySession(map);
-        var off=new GraphicsSettings { Fog=false,Wind=false,Bloom=false,SunRays=false,Outlines=false,HeatDistortion=false,Rain=false,Damage=false };
+        var off=new GraphicsSettings { Fog=false,Wind=false,Bloom=false,SunRays=false,Outlines=false,HeatDistortion=false,Rain=false,Damage=false,
+            DynamicLights=false,DepthOfField=false,ColorGrading=false,Vignette=false };
         Image Capture(GraphicsSettings mode,float time=1,float hour=12)
         {
             fx.Configure(mode,play); fx.Update(play,time); fx.Render(renderer,map,view,hiddenPlayer,size,size,hour);
@@ -77,7 +78,17 @@ static class GraphicsGpuChecks
             var night=Capture(off,1,0); var noSun=Capture(off with{SunRays=true,SunRaysStrength=1},1,0);
             try { Check(Changed(night,noSun,2)==0,"sun shafts disappear at night"); }
             finally { UnloadImage(night); UnloadImage(noSun); }
-            map.Objects.Add(new(){Asset="objects/props/camp/ognisko.png",X=2,Z=1,Height=1.4f});
+            map.Objects.Add(new(){Id="graphics-fire",Asset="objects/props/camp/ognisko.png",X=2,Z=1,Height=1.4f});
+            var animatedLight = off with { DynamicLights=true,LightFlickerStrength=.8f };
+            var fireTimes = Enumerable.Range(0,80).Select(i => i * .05f)
+                .OrderBy(t => WorldLighting.AllLights(map,new(animatedLight,t,view,0,true)).Single(l=>l.Id=="graphics-fire").Intensity).ToArray();
+            var lightDim=Capture(animatedLight,fireTimes[0],0); var lightBright=Capture(animatedLight,fireTimes[^1],0);
+            try
+            {
+                Check(Changed(lightDim,lightBright,5)>100,"animated fire changes actual nighttime surface illumination");
+                Preview(lightBright,"dynamic-lights");
+            }
+            finally { UnloadImage(lightDim); UnloadImage(lightBright); }
             var fire=Capture(off); var bloom=Capture(off with{Bloom=true,BloomStrength=1,BloomThreshold=.6f});
             try { Check(Changed(fire,bloom,4)>100,"the supplied campfire creates blurred light bloom"); Preview(bloom,"bloom"); }
             finally { UnloadImage(bloom); }
@@ -91,7 +102,8 @@ static class GraphicsGpuChecks
             try { Check(Changed(dry,rainA,4)>100&&Changed(rainA,rainB,4)>100,"rain falls and animates over the world image"); Preview(rainB,"rain"); }
             finally { UnloadImage(dry); UnloadImage(rainA); UnloadImage(rainB); }
             map.Type=MapType.Cave;
-            var indoor=Capture(off); var sheltered=Capture(new GraphicsSettings {Bloom=false,Outlines=false,HeatDistortion=false,Damage=false});
+            var indoor=Capture(off); var sheltered=Capture(new GraphicsSettings {Bloom=false,Outlines=false,HeatDistortion=false,Damage=false,
+                DynamicLights=false,DepthOfField=false,ColorGrading=false,Vignette=false});
             try { Check(Changed(indoor,sheltered,2)==0,"caves are sheltered from rain, wetness, fog, wind and sun"); }
             finally { UnloadImage(indoor); UnloadImage(sheltered); }
             map.Type=MapType.OpenWorld;
@@ -113,7 +125,8 @@ static class GraphicsGpuChecks
             foreach(var dimensions in new[]{(320,240),(800,540),(512,512)})
             { fx.Render(renderer,map,view,hiddenPlayer,dimensions.Item1,dimensions.Item2,12); }
             var all=Capture(new GraphicsSettings(),2,9); try { Preview(all,"all"); } finally { UnloadImage(all); }
-            Console.WriteLine("Graphics GPU checks passed: renderer bypass/colors, depth fog, anchored wind, outlines, fire bloom, heat refraction, sun/night/interior gating, wet ground, animated rain/water ripples, real damage vignette and framebuffer resizing.");
+            Hd2dGpuChecks.Run(assets);
+            Console.WriteLine("Graphics GPU checks passed: renderer bypass/colors, depth fog, anchored wind, outlines, animated nighttime lights, fire bloom, heat refraction, sun/night/interior gating, wet ground, animated rain/water ripples, real damage vignette and framebuffer resizing.");
         }
         finally { UnloadRenderTexture(target); assets.Sprites.Remove(plantId); assets.Terrain.Remove(groundId); UnloadTexture(plantTexture); UnloadTexture(groundTexture); }
     }

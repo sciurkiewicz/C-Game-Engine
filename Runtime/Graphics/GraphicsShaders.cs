@@ -126,6 +126,51 @@ static class GraphicsShaders
             finalColor = vec4(vec3(result / 16.0 * exp(-length(fragTexCoord-sunPosition) * 0.8)), 1);
         }
         """;
+    public const string DepthOfField = """
+        #version 330
+        in vec2 fragTexCoord;
+        uniform sampler2D texture0;
+        uniform sampler2D depthMap;
+        uniform vec2 resolution;
+        uniform vec4 cameraPlanes; // near, far, orthographic, unused
+        uniform vec4 focusParameters; // focus distance, sharp half-range, falloff, maximum radius in pixels
+        out vec4 finalColor;
+        float linearDepth(vec2 uv)
+        {
+            float d = texture(depthMap, uv).r;
+            float n = cameraPlanes.x, f = cameraPlanes.y;
+            if (cameraPlanes.z > 0.5) return mix(n, f, d);
+            return (2.0 * n * f) / (f + n - (d * 2.0 - 1.0) * (f - n));
+        }
+        float blurRadius(float depth)
+        {
+            return smoothstep(focusParameters.y, focusParameters.y + focusParameters.z,
+                abs(depth - focusParameters.x)) * focusParameters.w;
+        }
+        void main()
+        {
+            vec2 uv = fragTexCoord;
+            float depth = linearDepth(uv), radius = blurRadius(depth);
+            vec3 color = texture(texture0, uv).rgb;
+            if (radius < 0.5) { finalColor = vec4(color, 1); return; }
+            float total = 1.0;
+            // A disk rather than a horizontal screen band: elevated terrain and both projections keep their depth.
+            for (int i = 0; i < 24; i++)
+            {
+                float angle = float(i) * 2.39996323;
+                float distance = sqrt((float(i) + 0.5) / 24.0);
+                vec2 sampleUV = clamp(uv + vec2(cos(angle), sin(angle)) * distance * radius / resolution,
+                    vec2(0.001), vec2(0.999));
+                float sampleDepth = linearDepth(sampleUV);
+                // Keep an in-focus foreground silhouette from bleeding into a blurred background.
+                float weight = sampleDepth < depth - 0.3
+                    ? smoothstep(radius * 0.25, radius * 0.75, blurRadius(sampleDepth)) : 1.0;
+                color += texture(texture0, sampleUV).rgb * weight;
+                total += weight;
+            }
+            finalColor = vec4(color / total, 1);
+        }
+        """;
     public const string Composite = """
         #version 330
         in vec2 fragTexCoord;
@@ -134,6 +179,8 @@ static class GraphicsShaders
         uniform sampler2D raysMap;
         uniform vec2 resolution;
         uniform vec4 strengths; // bloom, rays, rain, damage
+        uniform vec4 colorGrade; // exposure, contrast, saturation, temperature
+        uniform float vignetteStrength;
         uniform float heatStrength;
         uniform float time;
         uniform int heatCount;
@@ -162,7 +209,14 @@ static class GraphicsShaders
                 float drop = (1.0-smoothstep(0.015,0.045,abs(f.x-0.5))) * smoothstep(0.1,0.17,f.y) * (1.0-smoothstep(0.42,0.63,f.y));
                 color = mix(color,vec3(0.68,0.78,0.88),drop * enabled * 0.22);
             }
+            color *= colorGrade.x;
+            color = (color - 0.5) * colorGrade.y + 0.5;
+            float luminance = dot(color, vec3(0.2126,0.7152,0.0722));
+            color = mix(vec3(luminance), color, colorGrade.z);
+            float highlights = smoothstep(0.2, 0.8, luminance);
+            color += mix(vec3(-0.045,0.005,0.065), vec3(0.13,0.035,-0.075), highlights) * colorGrade.w;
             float edge = smoothstep(0.2,0.68,length((fragTexCoord-0.5)*vec2(1.0,0.85)));
+            color *= 1.0 - edge * vignetteStrength;
             color = mix(color,vec3(0.55,0.025,0.015),edge * strengths.w * 0.7);
             finalColor = vec4(color,1);
         }
